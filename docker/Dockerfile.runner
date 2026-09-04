@@ -1,0 +1,15 @@
+FROM node:24-alpine AS build
+WORKDIR /app
+COPY package.json tsconfig.json tsconfig.build.json ./
+RUN npm install --no-audit --no-fund
+COPY packages ./packages
+COPY apps/runner ./apps/runner
+RUN npm run build
+
+FROM node:24-alpine
+WORKDIR /app
+USER 65532:65532
+COPY --from=build --chown=65532:65532 /app/dist/apps/runner ./dist/apps/runner
+COPY --from=build --chown=65532:65532 /app/dist/packages ./dist/packages
+ENTRYPOINT ["node", "/app/dist/apps/runner/src/main.js"]
+
