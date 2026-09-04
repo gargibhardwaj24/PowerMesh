@@ -6,12 +6,15 @@ import {
   parseJobCompletionInput,
   parseJobCreateInput,
   TERMINAL_JOB_STATUSES,
+  type AgentHeartbeatInput,
   type CapabilityCreateInput,
   type CapabilityStatus,
   type CapabilityType,
+  type DeviceArchitecture,
   type DeviceCreateInput,
   type DevicePlatform,
   type DeviceStatus,
+  type ExecutionIsolation,
   type JobCompletionInput,
   type JobCreateInput,
   type JobStatus,
@@ -19,7 +22,11 @@ import {
 } from "../../../packages/contracts/src/index.js";
 import { AppError } from "../../../packages/core/src/errors.js";
 import { assertTransition } from "../../../packages/core/src/state-machine.js";
-import type { MatchCandidate, MatchResult } from "../../../packages/core/src/matcher.js";
+import {
+  calculateReliabilityScore,
+  type MatchCandidate,
+  type MatchResult
+} from "../../../packages/core/src/matcher.js";
 import type { JobEventBus } from "./event-bus.js";
 
 export interface UserRecord {
@@ -36,8 +43,19 @@ export interface DeviceRecord {
   name: string;
   platform: DevicePlatform;
   status: DeviceStatus;
+  hardware: DeviceHardwareSnapshot | null;
   lastHeartbeatAt: string;
   createdAt: string;
+}
+
+export interface DeviceHardwareSnapshot {
+  architecture: DeviceArchitecture;
+  logicalCores: number;
+  memoryMb: number;
+  cpuModel: string;
+  nodeVersion: string;
+  executionIsolation: ExecutionIsolation;
+  reportedAt: string;
 }
 
 export interface CapabilityRecord {
@@ -52,6 +70,8 @@ export interface CapabilityRecord {
   maxRuntimeMs: number;
   maxConcurrentJobs: number;
   reliabilityScore: number;
+  completedJobs: number;
+  failedJobs: number;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
@@ -112,6 +132,17 @@ CREATE TABLE IF NOT EXISTS devices (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS device_telemetry (
+  device_id TEXT PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  architecture TEXT NOT NULL CHECK (architecture IN ('ARM64', 'X64', 'OTHER')),
+  logical_cores INTEGER NOT NULL CHECK (logical_cores > 0),
+  memory_mb INTEGER NOT NULL CHECK (memory_mb > 0),
+  cpu_model TEXT NOT NULL,
+  node_version TEXT NOT NULL,
+  execution_isolation TEXT NOT NULL CHECK (execution_isolation IN ('DOCKER', 'LOCAL_UNSAFE')),
+  reported_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS capabilities (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL REFERENCES devices(id),
@@ -167,6 +198,24 @@ CREATE INDEX IF NOT EXISTS jobs_provider_idx ON jobs(provider_id, created_at DES
 CREATE INDEX IF NOT EXISTS jobs_device_status_idx ON jobs(device_id, status, created_at);
 CREATE INDEX IF NOT EXISTS events_job_sequence_idx ON job_events(job_id, sequence);
 `;
+
+const DEVICE_WITH_HARDWARE_SELECT = `
+  SELECT d.*,
+    t.architecture AS telemetry_architecture,
+    t.logical_cores AS telemetry_logical_cores,
+    t.memory_mb AS telemetry_memory_mb,
+    t.cpu_model AS telemetry_cpu_model,
+    t.node_version AS telemetry_node_version,
+    t.execution_isolation AS telemetry_execution_isolation,
+    t.reported_at AS telemetry_reported_at
+  FROM devices d
+  LEFT JOIN device_telemetry t ON t.device_id = d.id`;
+
+const CAPABILITY_WITH_RELIABILITY_SELECT = `
+  SELECT c.*,
+    (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND j.status = 'COMPLETED') AS completed_jobs,
+    (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND j.status = 'FAILED') AS failed_jobs
+  FROM capabilities c`;
 
 function expectString(row: Record<string, SQLOutputValue>, key: string): string {
   const value = row[key];
@@ -244,18 +293,34 @@ function mapUser(row: Record<string, SQLOutputValue>): UserRecord {
 }
 
 function mapDevice(row: Record<string, SQLOutputValue>): DeviceRecord {
+  const architecture = nullableString(row, "telemetry_architecture");
+  const hardware: DeviceHardwareSnapshot | null =
+    architecture === null
+      ? null
+      : {
+          architecture: architecture as DeviceArchitecture,
+          logicalCores: expectNumber(row, "telemetry_logical_cores"),
+          memoryMb: expectNumber(row, "telemetry_memory_mb"),
+          cpuModel: expectString(row, "telemetry_cpu_model"),
+          nodeVersion: expectString(row, "telemetry_node_version"),
+          executionIsolation: expectString(row, "telemetry_execution_isolation") as ExecutionIsolation,
+          reportedAt: expectString(row, "telemetry_reported_at")
+        };
   return {
     id: expectString(row, "id"),
     ownerId: expectString(row, "owner_id"),
     name: expectString(row, "name"),
     platform: expectString(row, "platform") as DevicePlatform,
     status: expectString(row, "status") as DeviceStatus,
+    hardware,
     lastHeartbeatAt: expectString(row, "last_heartbeat_at"),
     createdAt: expectString(row, "created_at")
   };
 }
 
 function mapCapability(row: Record<string, SQLOutputValue>): CapabilityRecord {
+  const completedJobs = expectNumber(row, "completed_jobs");
+  const failedJobs = expectNumber(row, "failed_jobs");
   return {
     id: expectString(row, "id"),
     deviceId: expectString(row, "device_id"),
@@ -267,7 +332,9 @@ function mapCapability(row: Record<string, SQLOutputValue>): CapabilityRecord {
     maxIterations: expectNumber(row, "max_iterations"),
     maxRuntimeMs: expectNumber(row, "max_runtime_ms"),
     maxConcurrentJobs: expectNumber(row, "max_concurrent_jobs"),
-    reliabilityScore: expectNumber(row, "reliability_score"),
+    reliabilityScore: calculateReliabilityScore(completedJobs, failedJobs),
+    completedJobs,
+    failedJobs,
     expiresAt: expectString(row, "expires_at"),
     createdAt: expectString(row, "created_at"),
     updatedAt: expectString(row, "updated_at")
@@ -385,7 +452,8 @@ export class SqliteStore {
         ownerId,
         name: input.name,
         platform: input.platform,
-        status: "ONLINE",
+        status: "OFFLINE",
+        hardware: null,
         lastHeartbeatAt: now,
         createdAt: now
       };
@@ -412,19 +480,25 @@ export class SqliteStore {
 
   getDevice(deviceId: string): DeviceRecord | null {
     try {
-      const row = this.#database.prepare("SELECT * FROM devices WHERE id = ?").get(deviceId);
+      const row = this.#database.prepare(`${DEVICE_WITH_HARDWARE_SELECT} WHERE d.id = ?`).get(deviceId);
       return row === undefined ? null : mapDevice(row);
     } catch (error) {
       throw new Error("Unable to read provider device", { cause: error });
     }
   }
 
-  listDevices(ownerId: string): DeviceRecord[] {
+  listDevices(ownerId: string, heartbeatStaleMs: number, now = Date.now()): DeviceRecord[] {
     try {
+      const staleBefore = now - heartbeatStaleMs;
       return this.#database
-        .prepare("SELECT * FROM devices WHERE owner_id = ? ORDER BY created_at DESC")
+        .prepare(`${DEVICE_WITH_HARDWARE_SELECT} WHERE d.owner_id = ? ORDER BY d.created_at DESC`)
         .all(ownerId)
-        .map(mapDevice);
+        .map(mapDevice)
+        .map((device) =>
+          device.status === "ONLINE" && Date.parse(device.lastHeartbeatAt) < staleBefore
+            ? { ...device, status: "OFFLINE" as const }
+            : device
+        );
     } catch (error) {
       throw new Error("Unable to list provider devices", { cause: error });
     }
@@ -432,7 +506,7 @@ export class SqliteStore {
 
   authenticateAgent(deviceId: string, token: string): DeviceRecord {
     try {
-      const row = this.#database.prepare("SELECT * FROM devices WHERE id = ?").get(deviceId);
+      const row = this.#database.prepare(`${DEVICE_WITH_HARDWARE_SELECT} WHERE d.id = ?`).get(deviceId);
       if (row === undefined) throw new AppError(401, "INVALID_AGENT_TOKEN", "Agent credentials are invalid");
       const expected = Buffer.from(expectString(row, "agent_token_hash"), "hex");
       const received = Buffer.from(agentTokenHash(token), "hex");
@@ -446,14 +520,42 @@ export class SqliteStore {
     }
   }
 
-  heartbeat(deviceId: string): DeviceRecord {
+  heartbeat(deviceId: string, input: AgentHeartbeatInput): DeviceRecord {
     try {
-      const now = new Date().toISOString();
-      const result = this.#database
-        .prepare("UPDATE devices SET status = CASE WHEN status = 'OFFLINE' THEN 'ONLINE' ELSE status END, last_heartbeat_at = ? WHERE id = ?")
-        .run(now, deviceId);
-      if (result.changes !== 1) throw new AppError(404, "DEVICE_NOT_FOUND", "Provider device was not found");
-      return mapDevice(this.#database.prepare("SELECT * FROM devices WHERE id = ?").get(deviceId)!);
+      return this.#transaction(() => {
+        const now = new Date().toISOString();
+        const result = this.#database
+          .prepare(
+            "UPDATE devices SET status = CASE WHEN status = 'OFFLINE' THEN 'ONLINE' ELSE status END, last_heartbeat_at = ? WHERE id = ?"
+          )
+          .run(now, deviceId);
+        if (result.changes !== 1) throw new AppError(404, "DEVICE_NOT_FOUND", "Provider device was not found");
+        this.#database
+          .prepare(
+            `INSERT INTO device_telemetry (
+              device_id, architecture, logical_cores, memory_mb, cpu_model, node_version, execution_isolation, reported_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+              architecture = excluded.architecture,
+              logical_cores = excluded.logical_cores,
+              memory_mb = excluded.memory_mb,
+              cpu_model = excluded.cpu_model,
+              node_version = excluded.node_version,
+              execution_isolation = excluded.execution_isolation,
+              reported_at = excluded.reported_at`
+          )
+          .run(
+            deviceId,
+            input.hardware.architecture,
+            input.hardware.logicalCores,
+            input.hardware.memoryMb,
+            input.hardware.cpuModel,
+            input.hardware.nodeVersion,
+            input.hardware.executionIsolation,
+            now
+          );
+        return mapDevice(this.#database.prepare(`${DEVICE_WITH_HARDWARE_SELECT} WHERE d.id = ?`).get(deviceId)!);
+      });
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new Error("Unable to record provider heartbeat", { cause: error });
@@ -467,13 +569,11 @@ export class SqliteStore {
         if (device === null) throw new AppError(404, "DEVICE_NOT_FOUND", "Provider device was not found");
         if (device.ownerId !== ownerId) throw new AppError(403, "FORBIDDEN", "You do not own this device");
         const now = new Date().toISOString();
-        this.#database
-          .prepare("UPDATE devices SET status = 'ONLINE', last_heartbeat_at = ? WHERE id = ?")
-          .run(now, deviceId);
+        this.#database.prepare("UPDATE devices SET status = 'ONLINE' WHERE id = ?").run(deviceId);
         this.#database
           .prepare("UPDATE capabilities SET status = 'ACTIVE', updated_at = ? WHERE device_id = ? AND status = 'PAUSED' AND expires_at > ?")
           .run(now, deviceId, now);
-        return mapDevice(this.#database.prepare("SELECT * FROM devices WHERE id = ?").get(deviceId)!);
+        return mapDevice(this.#database.prepare(`${DEVICE_WITH_HARDWARE_SELECT} WHERE d.id = ?`).get(deviceId)!);
       });
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -517,7 +617,9 @@ export class SqliteStore {
           now
         );
       return mapCapability(
-        this.#database.prepare("SELECT * FROM capabilities WHERE device_id = ? AND type = ?").get(input.deviceId, input.type)!
+        this.#database
+          .prepare(`${CAPABILITY_WITH_RELIABILITY_SELECT} WHERE c.device_id = ? AND c.type = ?`)
+          .get(input.deviceId, input.type)!
       );
     } catch (error) {
       throw new Error("Unable to publish provider capability", { cause: error });
@@ -526,7 +628,10 @@ export class SqliteStore {
 
   listCapabilities(): CapabilityRecord[] {
     try {
-      return this.#database.prepare("SELECT * FROM capabilities ORDER BY updated_at DESC").all().map(mapCapability);
+      return this.#database
+        .prepare(`${CAPABILITY_WITH_RELIABILITY_SELECT} ORDER BY c.updated_at DESC`)
+        .all()
+        .map(mapCapability);
     } catch (error) {
       throw new Error("Unable to list capabilities", { cause: error });
     }
@@ -567,7 +672,9 @@ export class SqliteStore {
       const rows = this.#database
         .prepare(
           `SELECT c.*, d.status AS device_status, d.last_heartbeat_at,
-            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status IN ('APPROVED', 'RUNNING')) AS current_jobs
+            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status IN ('APPROVED', 'RUNNING')) AS current_jobs,
+            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status = 'COMPLETED') AS completed_jobs,
+            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status = 'FAILED') AS failed_jobs
           FROM capabilities c
           JOIN devices d ON d.id = c.device_id`
         )
@@ -590,7 +697,10 @@ export class SqliteStore {
           maxConcurrentJobs: expectNumber(row, "max_concurrent_jobs"),
           currentJobs: expectNumber(row, "current_jobs"),
           estimatedLatencyMs: Math.max(0, Math.min(heartbeatAge, 5_000)),
-          reliabilityScore: expectNumber(row, "reliability_score")
+          reliabilityScore: calculateReliabilityScore(
+            expectNumber(row, "completed_jobs"),
+            expectNumber(row, "failed_jobs")
+          )
         };
       });
     } catch (error) {

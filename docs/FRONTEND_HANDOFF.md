@@ -11,6 +11,14 @@ The backend contract is stable enough for the first integration pass.
 - `features/requester`: job form, match state, live state timeline, result.
 - `features/network`: summary counters and available capability cards.
 
+## Provider trust display
+
+- A newly registered device is `OFFLINE` until its agent reports in. Do not show it as available immediately after registration.
+- `device.hardware` is `null` before the first heartbeat. Handle that as "Agent not connected", not as a loading loop.
+- Label the hardware snapshot as self-reported compatibility data, not hardware attestation.
+- Surface `executionIsolation`. `LOCAL_UNSAFE` must show an explicit development-only warning; only `DOCKER` supports the sandbox claim.
+- Capability cards may show `reliabilityScore`, `completedJobs`, and `failedJobs`. Treat the score as execution history, not identity verification.
+
 ## Required UI states
 
 - Loading, error, empty and retry for every list/detail request.
@@ -39,4 +47,3 @@ The backend contract is stable enough for the first integration pass.
 - Do not show Apple Neural Engine/GPU usage; the MVP workload is CPU rendering.
 - Do not claim peer discovery or crypto/payment implementation.
 - Do not render raw SVG through HTML injection.
-
