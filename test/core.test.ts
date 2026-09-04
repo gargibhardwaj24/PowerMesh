@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseJobCreateInput } from "../packages/contracts/src/index.js";
+import { parseAgentHeartbeatInput, parseJobCreateInput } from "../packages/contracts/src/index.js";
 import { AppError } from "../packages/core/src/errors.js";
 import { issueSessionToken, verifySessionToken } from "../packages/core/src/auth.js";
-import { selectBestProvider, type MatchCandidate } from "../packages/core/src/matcher.js";
+import {
+  calculateReliabilityScore,
+  selectBestProvider,
+  type MatchCandidate
+} from "../packages/core/src/matcher.js";
 import { renderMandelbrotSvg } from "../packages/core/src/mandelbrot.js";
 import { assertTransition, canTransition } from "../packages/core/src/state-machine.js";
 
@@ -27,6 +31,28 @@ void test("contract rejects malformed workload instead of returning partial data
   const parsed = parseJobCreateInput({ ...validJob, parameters: { ...validJob.parameters, width: "320" } });
   assert.equal(parsed.ok, false);
   if (!parsed.ok) assert.match(parsed.issues.join(" "), /width must be a finite number/);
+});
+
+void test("agent hardware parser rejects malformed self-reported telemetry", () => {
+  const parsed = parseAgentHeartbeatInput({
+    hardware: {
+      architecture: "ARM64",
+      logicalCores: "10",
+      memoryMb: 16_384,
+      cpuModel: "Apple M5",
+      nodeVersion: "v24.7.0",
+      executionIsolation: "DOCKER"
+    }
+  });
+  assert.equal(parsed.ok, false);
+  if (!parsed.ok) assert.match(parsed.issues.join(" "), /logicalCores must be a finite number/);
+});
+
+void test("provider reliability uses a bounded Bayesian prior instead of an unearned perfect score", () => {
+  assert.equal(calculateReliabilityScore(0, 0), 0.8);
+  assert.equal(calculateReliabilityScore(1, 0), 5 / 6);
+  assert.equal(calculateReliabilityScore(1, 1), 5 / 7);
+  assert.throws(() => calculateReliabilityScore(-1, 0), /non-negative integers/);
 });
 
 void test("session token rejects tampering and expiry", () => {

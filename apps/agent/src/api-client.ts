@@ -1,6 +1,7 @@
 import {
   isJobStatus,
   parseJobCreateInput,
+  type AgentHeartbeatInput,
   type JobCompletionInput,
   type JobCreateInput,
   type JobStatus
@@ -82,8 +83,11 @@ export class AgentApiClient {
     }
   }
 
-  async heartbeat(): Promise<void> {
-    await this.#request(`/api/agent/devices/${this.#deviceId}/heartbeat`, { method: "POST" });
+  async heartbeat(hardware: AgentHeartbeatInput["hardware"]): Promise<void> {
+    await this.#request(`/api/agent/devices/${this.#deviceId}/heartbeat`, {
+      method: "POST",
+      body: { hardware } satisfies AgentHeartbeatInput
+    });
   }
 
   async claim(): Promise<ClaimedJob | null> {

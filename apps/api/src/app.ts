@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import {
+  parseAgentHeartbeatInput,
   parseCapabilityCreateInput,
   parseDemoSessionInput,
   parseDeviceCreateInput,
@@ -211,7 +212,7 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
 
         if (method === "GET" && url.pathname === "/api/devices") {
           const claims = requireSession(request, config, "PROVIDER");
-          sendData(response, requestId, 200, store.listDevices(claims.sub));
+          sendData(response, requestId, 200, store.listDevices(claims.sub, config.heartbeatStaleMs));
           return;
         }
 
@@ -219,7 +220,8 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
         if (method === "POST" && heartbeatMatch?.[1] !== undefined) {
           const agent = authenticateAgent(request, store);
           if (agent.deviceId !== heartbeatMatch[1]) throw new AppError(403, "FORBIDDEN", "Agent device ID does not match route");
-          sendData(response, requestId, 200, store.heartbeat(agent.deviceId));
+          const input = validated(parseAgentHeartbeatInput(await readJsonBody(request, config.maxBodyBytes)));
+          sendData(response, requestId, 200, store.heartbeat(agent.deviceId, input));
           return;
         }
 

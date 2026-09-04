@@ -11,6 +11,7 @@
     "dev:agent": "node --env-file-if-exists=.env --import tsx --watch apps/agent/src/index.ts",
     "start:api": "node --env-file-if-exists=.env dist/apps/api/src/server.js",
     "start:agent": "node --env-file-if-exists=.env dist/apps/agent/src/index.js",
+    "demo:backup": "npm run build && node --env-file-if-exists=.env dist/apps/demo/src/main.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",

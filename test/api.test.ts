@@ -7,6 +7,14 @@ import type { JobCreateInput } from "../packages/contracts/src/index.js";
 import { renderMandelbrotSvg } from "../packages/core/src/mandelbrot.js";
 
 const TEST_SECRET = "integration-test-secret-with-more-than-thirty-two-characters";
+const TEST_HARDWARE = {
+  architecture: "ARM64",
+  logicalCores: 10,
+  memoryMb: 16_384,
+  cpuModel: "Apple M5",
+  nodeVersion: "v24.7.0",
+  executionIsolation: "LOCAL_UNSAFE"
+} as const;
 
 interface TestResponse {
   status: number;
@@ -91,6 +99,7 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   assert.equal(providerSession.status, 201);
   const providerData = record(record(providerSession.body, "provider envelope")["data"], "provider data");
   const providerToken = string(providerData["token"], "provider token");
+  const providerId = string(record(providerData["user"], "provider user")["id"], "provider id");
 
   const requesterSession = await request(baseUrl, "/api/auth/demo-session", {
     method: "POST",
@@ -107,9 +116,23 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   });
   assert.equal(registered.status, 201);
   const registration = record(record(registered.body, "device envelope")["data"], "device registration");
-  const deviceId = string(record(registration["device"], "device")["id"], "device id");
+  const registeredDevice = record(registration["device"], "device");
+  const deviceId = string(registeredDevice["id"], "device id");
   const agentToken = string(registration["agentToken"], "agent token");
   const agent = { deviceId, token: agentToken };
+  assert.equal(registeredDevice["status"], "OFFLINE", "device must stay offline until its agent reports in");
+  assert.equal(registeredDevice["hardware"], null);
+
+  const initialHeartbeat = await request(baseUrl, `/api/agent/devices/${deviceId}/heartbeat`, {
+    method: "POST",
+    agent,
+    body: { hardware: TEST_HARDWARE }
+  });
+  assert.equal(initialHeartbeat.status, 200);
+  const onlineDevice = record(record(initialHeartbeat.body, "initial heartbeat envelope")["data"], "online device");
+  assert.equal(onlineDevice["status"], "ONLINE");
+  assert.equal(record(onlineDevice["hardware"], "online device hardware")["logicalCores"], 10);
+  assert.equal(application.store.listDevices(providerId, 30_000, Date.now() + 60_000)[0]?.status, "OFFLINE");
 
   const capability = await request(baseUrl, "/api/capabilities", {
     method: "POST",
@@ -236,10 +259,17 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   const killedJob = await request(baseUrl, `/api/jobs/${secondJobId}`, { token: requesterToken });
   assert.equal(record(record(killedJob.body, "killed envelope")["data"], "killed job")["status"], "KILLED");
 
-  const heartbeat = await request(baseUrl, `/api/agent/devices/${deviceId}/heartbeat`, { method: "POST", agent });
+  const heartbeat = await request(baseUrl, `/api/agent/devices/${deviceId}/heartbeat`, {
+    method: "POST",
+    agent,
+    body: { hardware: TEST_HARDWARE }
+  });
   assert.equal(heartbeat.status, 200);
   const heartbeatDevice = record(record(heartbeat.body, "heartbeat envelope")["data"], "heartbeat device");
   assert.equal(heartbeatDevice["status"], "PAUSED", "heartbeat must not bypass provider kill switch");
+  const reportedHardware = record(heartbeatDevice["hardware"], "heartbeat hardware");
+  assert.equal(reportedHardware["cpuModel"], TEST_HARDWARE.cpuModel);
+  assert.equal(reportedHardware["executionIsolation"], "LOCAL_UNSAFE");
 
   const summaryWhilePaused = await request(baseUrl, "/api/network/summary", { token: providerToken });
   const pausedSummary = record(record(summaryWhilePaused.body, "summary envelope")["data"], "paused summary");
@@ -250,4 +280,38 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   const summaryAfterResume = await request(baseUrl, "/api/network/summary", { token: providerToken });
   const resumedSummary = record(record(summaryAfterResume.body, "resumed summary envelope")["data"], "resumed summary");
   assert.equal(resumedSummary["activeCapabilities"], 1);
+
+  const failedSubmission = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: input
+  });
+  const failedJobId = string(
+    record(record(failedSubmission.body, "failed submission envelope")["data"], "failed submission")["id"],
+    "failed job id"
+  );
+  assert.equal(
+    (await request(baseUrl, `/api/jobs/${failedJobId}/approve`, { method: "POST", token: providerToken })).status,
+    200
+  );
+  assert.equal((await request(baseUrl, "/api/agent/jobs/claim", { method: "POST", agent })).status, 200);
+  assert.equal(
+    (
+      await request(baseUrl, `/api/agent/jobs/${failedJobId}/fail`, {
+        method: "POST",
+        agent,
+        body: { code: "DEMO_FAILURE", message: "Controlled reliability test failure" }
+      })
+    ).status,
+    200
+  );
+
+  const capabilities = await request(baseUrl, "/api/capabilities", { token: providerToken });
+  assert.equal(capabilities.status, 200);
+  const capabilityList = record(capabilities.body, "capabilities envelope")["data"];
+  assert.ok(Array.isArray(capabilityList));
+  const publishedCapability = record(capabilityList[0], "published capability");
+  assert.equal(publishedCapability["completedJobs"], 1);
+  assert.equal(publishedCapability["failedJobs"], 1);
+  assert.equal(publishedCapability["reliabilityScore"], 5 / 7);
 });

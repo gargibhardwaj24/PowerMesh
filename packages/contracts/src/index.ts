@@ -7,6 +7,12 @@ export type DevicePlatform = (typeof DEVICE_PLATFORMS)[number];
 export const DEVICE_STATUSES = ["ONLINE", "OFFLINE", "PAUSED"] as const;
 export type DeviceStatus = (typeof DEVICE_STATUSES)[number];
 
+export const DEVICE_ARCHITECTURES = ["ARM64", "X64", "OTHER"] as const;
+export type DeviceArchitecture = (typeof DEVICE_ARCHITECTURES)[number];
+
+export const EXECUTION_ISOLATIONS = ["DOCKER", "LOCAL_UNSAFE"] as const;
+export type ExecutionIsolation = (typeof EXECUTION_ISOLATIONS)[number];
+
 export const CAPABILITY_TYPES = ["MANDELBROT_RENDER"] as const;
 export type CapabilityType = (typeof CAPABILITY_TYPES)[number];
 
@@ -47,6 +53,14 @@ export const MANDELBROT_LIMITS = {
   MAX_RESULT_BYTES: 2_000_000
 } as const;
 
+export const HARDWARE_SNAPSHOT_LIMITS = {
+  MAX_LOGICAL_CORES: 512,
+  MIN_MEMORY_MB: 128,
+  MAX_MEMORY_MB: 16_777_216,
+  MAX_CPU_MODEL_LENGTH: 200,
+  MAX_NODE_VERSION_LENGTH: 40
+} as const;
+
 export type MandelbrotPalette = "OCEAN" | "EMBER" | "MONO";
 
 export interface MandelbrotParameters {
@@ -68,6 +82,17 @@ export interface DemoSessionInput {
 export interface DeviceCreateInput {
   name: string;
   platform: DevicePlatform;
+}
+
+export interface AgentHeartbeatInput {
+  hardware: {
+    architecture: DeviceArchitecture;
+    logicalCores: number;
+    memoryMb: number;
+    cpuModel: string;
+    nodeVersion: string;
+    executionIsolation: ExecutionIsolation;
+  };
 }
 
 export interface CapabilityCreateInput {
@@ -195,6 +220,40 @@ export function parseDeviceCreateInput(input: unknown): ValidationResult<DeviceC
   return finish(issues, {
     name,
     platform: isOneOf(platform, DEVICE_PLATFORMS) ? platform : "LINUX"
+  });
+}
+
+export function parseAgentHeartbeatInput(input: unknown): ValidationResult<AgentHeartbeatInput> {
+  if (!isRecord(input) || !isRecord(input["hardware"])) {
+    return { ok: false, issues: ["body and hardware must be objects"] };
+  }
+  const issues: string[] = [];
+  const hardware = input["hardware"];
+  const architecture = hardware["architecture"];
+  const executionIsolation = hardware["executionIsolation"];
+  if (!isOneOf(architecture, DEVICE_ARCHITECTURES)) issues.push("architecture is invalid");
+  if (!isOneOf(executionIsolation, EXECUTION_ISOLATIONS)) issues.push("executionIsolation is invalid");
+  return finish(issues, {
+    hardware: {
+      architecture: isOneOf(architecture, DEVICE_ARCHITECTURES) ? architecture : "OTHER",
+      logicalCores: readInteger(hardware, "logicalCores", issues, 1, HARDWARE_SNAPSHOT_LIMITS.MAX_LOGICAL_CORES),
+      memoryMb: readInteger(
+        hardware,
+        "memoryMb",
+        issues,
+        HARDWARE_SNAPSHOT_LIMITS.MIN_MEMORY_MB,
+        HARDWARE_SNAPSHOT_LIMITS.MAX_MEMORY_MB
+      ),
+      cpuModel: readString(hardware, "cpuModel", issues, {
+        min: 2,
+        max: HARDWARE_SNAPSHOT_LIMITS.MAX_CPU_MODEL_LENGTH
+      }),
+      nodeVersion: readString(hardware, "nodeVersion", issues, {
+        min: 2,
+        max: HARDWARE_SNAPSHOT_LIMITS.MAX_NODE_VERSION_LENGTH
+      }),
+      executionIsolation: isOneOf(executionIsolation, EXECUTION_ISOLATIONS) ? executionIsolation : "LOCAL_UNSAFE"
+    }
   });
 }
 

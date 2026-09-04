@@ -25,8 +25,10 @@ The coordinator is centralized for the MVP. Compute execution is distributed to 
 - Strict TypeScript contracts and runtime request validation.
 - HMAC-signed, expiring demo sessions with requester/provider roles.
 - One-time provider agent credentials stored only as SHA-256 hashes.
+- Provider devices remain offline until an authenticated agent heartbeat reports a bounded CPU/memory snapshot and actual runner isolation mode.
 - Durable SQLite state for users, devices, capabilities, jobs, results, and ordered audit events.
 - Hard policy filtering before deterministic provider scoring.
+- Evidence-based provider reliability derived from completed and failed executions with a conservative Bayesian prior.
 - Guarded job state machine and atomic job claim.
 - Provider approval/rejection, kill switch, explicit resume, and requester cancellation.
 - Authenticated Server-Sent Events with disconnect cleanup and REST replay fallback.
@@ -63,11 +65,13 @@ Build the secure runner image:
 docker build -f docker/Dockerfile.runner -t powermesh/mandelbrot-runner:local .
 ```
 
-After registering a provider device through the API/UI, place the returned `device.id` and one-time `agentToken` in `.env` as `AGENT_DEVICE_ID` and `AGENT_TOKEN`, then start the agent:
+After registering a provider device through the API/UI, it remains `OFFLINE`. Place the returned `device.id` and one-time `agentToken` in `.env` as `AGENT_DEVICE_ID` and `AGENT_TOKEN`, then start the agent:
 
 ```bash
 npm run dev:agent
 ```
+
+The first authenticated heartbeat changes the device to `ONLINE` and records a self-reported CPU architecture, logical-core count, memory size, CPU model, Node version, and whether execution uses Docker or the explicitly unsafe local runner. This is useful compatibility evidence, not cryptographic hardware attestation.
 
 `RUNNER_MODE=docker` is the secure default. Local mode is not isolated and refuses to start unless both values are explicit:
 
@@ -84,6 +88,14 @@ npm run check
 
 The test suite runs a real in-process HTTP server and verifies auth, permissions, device registration, capability publishing, matching, approval, atomic claim, progress, result validation, audit events, SSE cleanup, kill-switch persistence, resume, state transitions, and local runner execution.
 
+For a one-command backup of the complete vertical slice:
+
+```bash
+npm run demo:backup
+```
+
+This fallback writes `demo-output/powermesh-result.svg` and clearly reports `LOCAL_UNSAFE_BACKUP_ONLY`; it proves orchestration, not Docker isolation. Use [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) for the primary UI demo and recovery steps.
+
 ## Frontend integration
 
 Use [docs/API_CONTRACT.md](docs/API_CONTRACT.md). All JSON responses use a stable `{ data, requestId }` envelope; all failures use `{ error: { code, message, requestId, details? } }`.
@@ -95,4 +107,3 @@ Use [docs/API_CONTRACT.md](docs/API_CONTRACT.md). All JSON responses use a stabl
 - Docker mode is the claimed isolation boundary for the demo.
 - Local runner mode demonstrates orchestration only; it is not a security sandbox.
 - No sandbox makes arbitrary untrusted execution risk-free. Arbitrary code remains out of scope.
-
