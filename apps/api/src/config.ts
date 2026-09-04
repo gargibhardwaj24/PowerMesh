@@ -10,6 +10,15 @@ export interface ApiConfig {
   databasePath: string;
   maxBodyBytes: number;
   heartbeatStaleMs: number;
+  jobSweepIntervalMs: number;
+  jobExpiry: JobExpiryConfig;
+}
+
+export interface JobExpiryConfig {
+  queueTtlMs: number;
+  approvalTtlMs: number;
+  startTtlMs: number;
+  runningGraceMs: number;
 }
 
 function readPositiveInteger(name: string, fallback: number): number {
@@ -17,6 +26,14 @@ function readPositiveInteger(name: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
+  return parsed;
+}
+
+function readNonNegativeInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer`);
   return parsed;
 }
 
@@ -31,6 +48,13 @@ export function loadApiConfig(): ApiConfig {
     tokenTtlSeconds: readPositiveInteger("TOKEN_TTL_SECONDS", 28_800),
     databasePath: resolve(process.env["DATABASE_PATH"] ?? "./data/powermesh.db"),
     maxBodyBytes: readPositiveInteger("MAX_BODY_BYTES", 3_000_000),
-    heartbeatStaleMs: readPositiveInteger("HEARTBEAT_STALE_MS", 30_000)
+    heartbeatStaleMs: readPositiveInteger("HEARTBEAT_STALE_MS", 30_000),
+    jobSweepIntervalMs: readPositiveInteger("JOB_SWEEP_INTERVAL_MS", 1_000),
+    jobExpiry: {
+      queueTtlMs: readPositiveInteger("JOB_QUEUE_TTL_MS", 600_000),
+      approvalTtlMs: readPositiveInteger("JOB_APPROVAL_TTL_MS", 300_000),
+      startTtlMs: readPositiveInteger("JOB_START_TTL_MS", 60_000),
+      runningGraceMs: readNonNegativeInteger("JOB_RUNNING_GRACE_MS", 5_000)
+    }
   };
 }

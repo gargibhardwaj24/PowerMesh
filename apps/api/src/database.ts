@@ -28,6 +28,7 @@ import {
   type MatchResult
 } from "../../../packages/core/src/matcher.js";
 import type { JobEventBus } from "./event-bus.js";
+import type { JobExpiryConfig } from "./config.js";
 
 export interface UserRecord {
   id: string;
@@ -106,6 +107,54 @@ export interface JobEventRecord {
   message: string;
   payload: Record<string, unknown> | null;
   createdAt: string;
+}
+
+interface JobExpiryDecision {
+  deadlineMs: number;
+  errorCode: "QUEUE_TIMEOUT" | "APPROVAL_TIMEOUT" | "AGENT_START_TIMEOUT" | "EXECUTION_TIMEOUT";
+  errorMessage: string;
+}
+
+const EXPIRABLE_JOB_STATUSES = ["SUBMITTED", "QUEUED", "AWAITING_APPROVAL", "APPROVED", "RUNNING"] as const;
+
+function parseJobTimestamp(value: string, field: string, jobId: string): number {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw new Error(`Job ${jobId} has an invalid ${field} timestamp`);
+  return timestamp;
+}
+
+function jobExpiryDecision(job: JobRecord, policy: JobExpiryConfig): JobExpiryDecision | null {
+  switch (job.status) {
+    case "SUBMITTED":
+    case "QUEUED":
+      return {
+        deadlineMs: parseJobTimestamp(job.createdAt, "createdAt", job.id) + policy.queueTtlMs,
+        errorCode: "QUEUE_TIMEOUT",
+        errorMessage: "No compatible provider became available before the queue deadline"
+      };
+    case "AWAITING_APPROVAL":
+      return {
+        deadlineMs: parseJobTimestamp(job.updatedAt, "updatedAt", job.id) + policy.approvalTtlMs,
+        errorCode: "APPROVAL_TIMEOUT",
+        errorMessage: "Provider did not approve the job before the approval deadline"
+      };
+    case "APPROVED":
+      return {
+        deadlineMs: parseJobTimestamp(job.updatedAt, "updatedAt", job.id) + policy.startTtlMs,
+        errorCode: "AGENT_START_TIMEOUT",
+        errorMessage: "Provider agent did not claim the approved job before the start deadline"
+      };
+    case "RUNNING":
+      if (job.startedAt === null) throw new Error(`Running job ${job.id} is missing startedAt`);
+      return {
+        deadlineMs:
+          parseJobTimestamp(job.startedAt, "startedAt", job.id) + job.input.requestedRuntimeMs + policy.runningGraceMs,
+        errorCode: "EXECUTION_TIMEOUT",
+        errorMessage: "Provider agent did not finish the job before the execution deadline"
+      };
+    default:
+      return null;
+  }
 }
 
 const SCHEMA = `
@@ -825,6 +874,48 @@ export class SqliteStore {
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new Error("Unable to update job state", { cause: error });
+    }
+  }
+
+  expireStaleJobs(policy: JobExpiryConfig, now = Date.now()): JobRecord[] {
+    try {
+      return this.#transaction(() => {
+        const placeholders = EXPIRABLE_JOB_STATUSES.map(() => "?").join(", ");
+        const jobs = this.#database
+          .prepare(`SELECT * FROM jobs WHERE status IN (${placeholders}) ORDER BY created_at, id`)
+          .all(...EXPIRABLE_JOB_STATUSES)
+          .map(mapJob);
+        const due = jobs
+          .map((job) => ({ job, decision: jobExpiryDecision(job, policy) }))
+          .filter(
+            (entry): entry is { job: JobRecord; decision: JobExpiryDecision } =>
+              entry.decision !== null && now >= entry.decision.deadlineMs
+          );
+        const expiredAt = new Date(now).toISOString();
+
+        for (const { job, decision } of due) {
+          assertTransition(job.status, "EXPIRED");
+          const updated = this.#database
+            .prepare(
+              `UPDATE jobs SET status = 'EXPIRED', error_code = ?, error_message = ?, completed_at = ?, updated_at = ?
+               WHERE id = ? AND status = ?`
+            )
+            .run(decision.errorCode, decision.errorMessage, expiredAt, expiredAt, job.id, job.status);
+          if (updated.changes !== 1) throw new Error(`Job ${job.id} changed state during expiry`);
+          this.#appendEvent(
+            job.id,
+            "STATUS_CHANGED",
+            "EXPIRED",
+            decision.errorMessage,
+            { errorCode: decision.errorCode, deadlineAt: new Date(decision.deadlineMs).toISOString() },
+            expiredAt
+          );
+        }
+
+        return due.map(({ job }) => this.#requireJob(job.id));
+      });
+    } catch (error) {
+      throw new Error("Unable to expire stalled jobs", { cause: error });
     }
   }
 
