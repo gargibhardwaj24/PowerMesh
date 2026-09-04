@@ -1,0 +1,28 @@
+{
+  "name": "powermesh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev:api": "node --env-file-if-exists=.env --import tsx --watch apps/api/src/server.ts",
+    "dev:agent": "node --env-file-if-exists=.env --import tsx --watch apps/agent/src/index.ts",
+    "start:api": "node --env-file-if-exists=.env dist/apps/api/src/server.js",
+    "start:agent": "node --env-file-if-exists=.env dist/apps/agent/src/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "node --import tsx --test test/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@types/node": "22.19.19",
+    "eslint": "9.39.4",
+    "tsx": "4.22.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.59.3"
+  }
+}
