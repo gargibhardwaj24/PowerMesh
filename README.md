@@ -29,7 +29,7 @@ The coordinator is centralized for the MVP. Compute execution is distributed to 
 - Durable SQLite state for users, devices, capabilities, jobs, results, and ordered audit events.
 - Hard policy filtering before deterministic provider scoring.
 - Evidence-based provider reliability derived from completed and failed executions with a conservative Bayesian prior.
-- Guarded job state machine and atomic job claim.
+- Guarded job state machine and atomic job claim with claim-time liveness, capability-policy, expiry, and capacity revalidation.
 - Durable deadlines that expire stalled queue, approval, agent-start, and execution states with explicit error codes.
 - Provider approval/rejection, kill switch, explicit resume, and requester cancellation.
 - Authenticated Server-Sent Events with disconnect cleanup and REST replay fallback.

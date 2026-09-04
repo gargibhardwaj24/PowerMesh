@@ -24,6 +24,7 @@ import { AppError } from "../../../packages/core/src/errors.js";
 import { assertTransition } from "../../../packages/core/src/state-machine.js";
 import {
   calculateReliabilityScore,
+  selectBestProvider,
   type MatchCandidate,
   type MatchResult
 } from "../../../packages/core/src/matcher.js";
@@ -937,22 +938,45 @@ export class SqliteStore {
     }
   }
 
-  claimApprovedJob(deviceId: string): JobRecord | null {
+  claimApprovedJob(deviceId: string, heartbeatStaleMs: number, now = Date.now()): JobRecord | null {
     try {
       return this.#transaction(() => {
-        const row = this.#database
-          .prepare("SELECT * FROM jobs WHERE device_id = ? AND status = 'APPROVED' ORDER BY created_at LIMIT 1")
-          .get(deviceId);
-        if (row === undefined) return null;
-        const job = mapJob(row);
-        assertTransition(job.status, "RUNNING");
-        const now = new Date().toISOString();
-        const updated = this.#database
-          .prepare("UPDATE jobs SET status = 'RUNNING', started_at = ?, updated_at = ? WHERE id = ? AND status = 'APPROVED'")
-          .run(now, now, job.id);
-        if (updated.changes !== 1) return null;
-        this.#appendEvent(job.id, "STATUS_CHANGED", "RUNNING", "Provider agent claimed the job", null, now);
-        return this.#requireJob(job.id);
+        const approvedJobs = this.#database
+          .prepare("SELECT * FROM jobs WHERE device_id = ? AND status = 'APPROVED' ORDER BY created_at, id")
+          .all(deviceId)
+          .map(mapJob);
+        if (approvedJobs.length === 0) return null;
+
+        const candidates = this.findMatchCandidates(heartbeatStaleMs, now);
+        const runningRow = this.#database
+          .prepare("SELECT COUNT(*) AS count FROM jobs WHERE device_id = ? AND status = 'RUNNING'")
+          .get(deviceId)!;
+        const runningJobs = expectNumber(runningRow, "count");
+
+        for (const job of approvedJobs) {
+          const candidate = candidates.find(
+            (entry) =>
+              entry.capabilityId === job.capabilityId &&
+              entry.providerId === job.providerId &&
+              entry.deviceId === job.deviceId
+          );
+          if (candidate === undefined) continue;
+          const eligible = selectBestProvider(job.input, [{ ...candidate, currentJobs: runningJobs }], now);
+          if (eligible === null) continue;
+
+          assertTransition(job.status, "RUNNING");
+          const claimedAt = new Date(now).toISOString();
+          const updated = this.#database
+            .prepare(
+              "UPDATE jobs SET status = 'RUNNING', started_at = ?, updated_at = ? WHERE id = ? AND status = 'APPROVED'"
+            )
+            .run(claimedAt, claimedAt, job.id);
+          if (updated.changes !== 1) continue;
+          this.#appendEvent(job.id, "STATUS_CHANGED", "RUNNING", "Provider agent claimed the job", null, claimedAt);
+          return this.#requireJob(job.id);
+        }
+
+        return null;
       });
     } catch (error) {
       if (error instanceof AppError) throw error;

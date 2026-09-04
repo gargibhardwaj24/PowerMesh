@@ -72,7 +72,7 @@ The frontend must treat `EXPIRED` as terminal and stop its stream. A retry creat
 | POST | `/api/jobs/:id/reject` | Matched provider | Reject request |
 | POST | `/api/jobs/:id/cancel` | Requester owner | Cancel non-terminal job |
 | POST | `/api/agent/devices/:id/heartbeat` | Agent | Refresh liveness and validated self-reported hardware without bypassing pause |
-| POST | `/api/agent/jobs/claim` | Agent | Atomically claim one approved assigned job |
+| POST | `/api/agent/jobs/claim` | Agent | Atomically claim one approved job after revalidating liveness, policy, expiry, and capacity |
 | GET | `/api/agent/jobs/:id/control` | Assigned agent | Poll cancel/kill state |
 | POST | `/api/agent/jobs/:id/progress` | Assigned agent | Append monotonic progress |
 | POST | `/api/agent/jobs/:id/complete` | Assigned agent | Submit validated SVG result |

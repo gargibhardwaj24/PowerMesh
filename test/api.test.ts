@@ -382,6 +382,145 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   assert.equal(publishedCapability["completedJobs"], 1);
   assert.equal(publishedCapability["failedJobs"], 1);
   assert.equal(publishedCapability["reliabilityScore"], 5 / 7);
+
+  const hardenedSubmission = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: input
+  });
+  const hardenedJobId = string(
+    record(record(hardenedSubmission.body, "hardened job envelope")["data"], "hardened job")["id"],
+    "hardened job id"
+  );
+  assert.equal(
+    (await request(baseUrl, `/api/jobs/${hardenedJobId}/approve`, { method: "POST", token: providerToken })).status,
+    200
+  );
+  assert.equal(
+    application.store.claimApprovedJob(deviceId, config.heartbeatStaleMs, Date.now() + 60_000),
+    null,
+    "a stale device must not claim an approved job"
+  );
+  assert.equal(application.store.getJob(hardenedJobId)?.status, "APPROVED");
+
+  const tightenedCapability = await request(baseUrl, "/api/capabilities", {
+    method: "POST",
+    token: providerToken,
+    body: {
+      deviceId,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 256,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 1,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }
+  });
+  assert.equal(tightenedCapability.status, 201);
+  const policyBlockedClaim = await request(baseUrl, "/api/agent/jobs/claim", { method: "POST", agent });
+  assert.equal(policyBlockedClaim.status, 200);
+  assert.equal(record(record(policyBlockedClaim.body, "blocked claim envelope")["data"], "blocked claim")["job"], null);
+  assert.equal(application.store.getJob(hardenedJobId)?.status, "APPROVED");
+
+  const restoredCapability = await request(baseUrl, "/api/capabilities", {
+    method: "POST",
+    token: providerToken,
+    body: {
+      deviceId,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 800,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 1,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }
+  });
+  assert.equal(restoredCapability.status, 201);
+  const revalidatedClaim = await request(baseUrl, "/api/agent/jobs/claim", { method: "POST", agent });
+  assert.equal(revalidatedClaim.status, 200);
+  const revalidatedJob = record(
+    record(record(revalidatedClaim.body, "revalidated claim envelope")["data"], "revalidated claim")["job"],
+    "revalidated job"
+  );
+  assert.equal(revalidatedJob["id"], hardenedJobId);
+  assert.equal(revalidatedJob["status"], "RUNNING");
+
+  const expandedCapacity = await request(baseUrl, "/api/capabilities", {
+    method: "POST",
+    token: providerToken,
+    body: {
+      deviceId,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 800,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 2,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }
+  });
+  assert.equal(expandedCapacity.status, 201);
+  const capacitySubmission = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: input
+  });
+  const capacityJobId = string(
+    record(record(capacitySubmission.body, "capacity job envelope")["data"], "capacity job")["id"],
+    "capacity job id"
+  );
+  assert.equal(
+    (await request(baseUrl, `/api/jobs/${capacityJobId}/approve`, { method: "POST", token: providerToken })).status,
+    200
+  );
+  const reducedCapacity = await request(baseUrl, "/api/capabilities", {
+    method: "POST",
+    token: providerToken,
+    body: {
+      deviceId,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 800,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 1,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }
+  });
+  assert.equal(reducedCapacity.status, 201);
+  const capacityBlockedClaim = await request(baseUrl, "/api/agent/jobs/claim", { method: "POST", agent });
+  assert.equal(
+    record(record(capacityBlockedClaim.body, "capacity blocked envelope")["data"], "capacity blocked")["job"],
+    null
+  );
+  assert.equal(application.store.getJob(capacityJobId)?.status, "APPROVED");
+  assert.equal(
+    (
+      await request(baseUrl, `/api/agent/jobs/${hardenedJobId}/fail`, {
+        method: "POST",
+        agent,
+        body: { code: "CONTROLLED_RELEASE", message: "Release the occupied test slot" }
+      })
+    ).status,
+    200
+  );
+  const capacityClaim = await request(baseUrl, "/api/agent/jobs/claim", { method: "POST", agent });
+  const capacityClaimedJob = record(
+    record(record(capacityClaim.body, "capacity claim envelope")["data"], "capacity claim")["job"],
+    "capacity claimed job"
+  );
+  assert.equal(capacityClaimedJob["id"], capacityJobId);
+  assert.equal(capacityClaimedJob["status"], "RUNNING");
 });
 
 void test("coordinator sweep expires an unmatched queued job and records the timeout", async (context) => {

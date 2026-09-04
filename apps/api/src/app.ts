@@ -367,7 +367,9 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
 
         if (method === "POST" && url.pathname === "/api/agent/jobs/claim") {
           const agent = authenticateAgent(request, store);
-          sendData(response, requestId, 200, { job: store.claimApprovedJob(agent.deviceId) });
+          sendData(response, requestId, 200, {
+            job: store.claimApprovedJob(agent.deviceId, config.heartbeatStaleMs)
+          });
           return;
         }
 
