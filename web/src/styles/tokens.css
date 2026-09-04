@@ -1,0 +1,58 @@
+:root {
+  /* ── Light content area ─────────────────────────── */
+  --pm-void:      #EDF0F7;   /* main bg */
+  --pm-surface:   #FFFFFF;   /* card bg */
+  --pm-raised:    #F4F7FB;   /* inner section / slight lift */
+  --pm-line:      #D1D9E6;   /* borders */
+
+  --pm-text:      #0D1B30;   /* primary text */
+  --pm-muted:     #4A6080;   /* secondary text */
+  --pm-faint:     #8FA3BF;   /* dim / placeholder */
+  --pm-steel:     #5C7A9A;
+
+  /* ── Accent colours ─────────────────────────────── */
+  --pm-gold:      #C08A18;   /* live capability (amber) */
+  --pm-gold-dim:  #FEF3C7;
+  --pm-cream:     #FFFBEB;
+
+  --pm-run:       #2563EB;   /* running – blue */
+  --pm-ok:        #16A34A;   /* success – green */
+  --pm-warn:      #D97706;   /* warning – amber */
+  --pm-stop:      #DC2626;   /* error / revoke – red */
+
+  /* ── Dark nav chrome (hardcoded in NavRail) ─────── */
+  /* keeping vars so ConnectionBanner can use them    */
+  --pm-nav-bg:    #0B1526;
+  --pm-nav-hi:    #16253d;
+  --pm-nav-text:  #C8D8EC;
+  --pm-nav-muted: #5E7A98;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background-color: var(--pm-void);
+  color: var(--pm-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono    { font-family: 'JetBrains Mono', monospace; font-feature-settings: "tnum"; }
+.font-display { font-family: 'Quicksand', sans-serif; font-weight: 600; }
+
+@keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pm-ok) 60%, transparent); }
+  50%       { box-shadow: 0 0 0 5px color-mix(in srgb, var(--pm-ok) 0%, transparent); }
+}
+.pulse-slow { animation: pulse-slow 2s ease-in-out infinite; }
+.pulse-dot  { animation: pulse-dot  2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pulse-slow, .pulse-dot { animation: none; } }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: var(--pm-void); }
+::-webkit-scrollbar-thumb  { background: var(--pm-line); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--pm-steel); }
