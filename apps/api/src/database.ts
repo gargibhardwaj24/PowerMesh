@@ -261,10 +261,15 @@ const DEVICE_WITH_HARDWARE_SELECT = `
   FROM devices d
   LEFT JOIN device_telemetry t ON t.device_id = d.id`;
 
+const PROVIDER_FAILURE_PREDICATE = `(
+  j.status = 'FAILED' OR
+  (j.status = 'EXPIRED' AND j.error_code IN ('APPROVAL_TIMEOUT', 'AGENT_START_TIMEOUT', 'EXECUTION_TIMEOUT'))
+)`;
+
 const CAPABILITY_WITH_RELIABILITY_SELECT = `
   SELECT c.*,
     (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND j.status = 'COMPLETED') AS completed_jobs,
-    (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND j.status = 'FAILED') AS failed_jobs
+    (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND ${PROVIDER_FAILURE_PREDICATE}) AS failed_jobs
   FROM capabilities c`;
 
 function expectString(row: Record<string, SQLOutputValue>, key: string): string {
@@ -724,7 +729,7 @@ export class SqliteStore {
           `SELECT c.*, d.status AS device_status, d.last_heartbeat_at,
             (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status IN ('APPROVED', 'RUNNING')) AS current_jobs,
             (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status = 'COMPLETED') AS completed_jobs,
-            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status = 'FAILED') AS failed_jobs
+            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND ${PROVIDER_FAILURE_PREDICATE}) AS failed_jobs
           FROM capabilities c
           JOIN devices d ON d.id = c.device_id`
         )

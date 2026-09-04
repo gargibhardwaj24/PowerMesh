@@ -380,8 +380,8 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   assert.ok(Array.isArray(capabilityList));
   const publishedCapability = record(capabilityList[0], "published capability");
   assert.equal(publishedCapability["completedJobs"], 1);
-  assert.equal(publishedCapability["failedJobs"], 1);
-  assert.equal(publishedCapability["reliabilityScore"], 5 / 7);
+  assert.equal(publishedCapability["failedJobs"], 4);
+  assert.equal(publishedCapability["reliabilityScore"], 0.5);
 
   const hardenedSubmission = await request(baseUrl, "/api/jobs", {
     method: "POST",
