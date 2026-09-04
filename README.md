@@ -88,6 +88,14 @@ npm run check
 
 The test suite runs a real in-process HTTP server and verifies auth, permissions, device registration, capability publishing, matching, approval, atomic claim, progress, result validation, audit events, SSE cleanup, kill-switch persistence, resume, state transitions, and local runner execution.
 
+For a one-command backup of the complete vertical slice:
+
+```bash
+npm run demo:backup
+```
+
+This fallback writes `demo-output/powermesh-result.svg` and clearly reports `LOCAL_UNSAFE_BACKUP_ONLY`; it proves orchestration, not Docker isolation. Use [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) for the primary UI demo and recovery steps.
+
 ## Frontend integration
 
 Use [docs/API_CONTRACT.md](docs/API_CONTRACT.md). All JSON responses use a stable `{ data, requestId }` envelope; all failures use `{ error: { code, message, requestId, details? } }`.
