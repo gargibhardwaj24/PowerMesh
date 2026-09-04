@@ -8,6 +8,7 @@ export interface AgentConfig {
   agentToken: string;
   pollMs: number;
   controlPollMs: number;
+  heartbeatMs: number;
   runner: {
     mode: RunnerMode;
     allowUnsafeLocalRunner: boolean;
@@ -52,6 +53,7 @@ export function loadAgentConfig(): AgentConfig {
     agentToken: required("AGENT_TOKEN"),
     pollMs: positiveInteger("AGENT_POLL_MS", 1_000),
     controlPollMs: positiveInteger("AGENT_CONTROL_POLL_MS", 500),
+    heartbeatMs: positiveInteger("AGENT_HEARTBEAT_MS", 5_000),
     runner: {
       mode: modeValue,
       allowUnsafeLocalRunner,
@@ -61,4 +63,3 @@ export function loadAgentConfig(): AgentConfig {
     }
   };
 }
-

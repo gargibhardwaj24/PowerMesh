@@ -35,4 +35,5 @@ The backup deliberately uses `LOCAL_UNSAFE_BACKUP_ONLY`. It proves orchestration
 - Job remains approved: confirm the agent heartbeat is fresh and its capability is active, unexpired, within policy, and has free execution capacity.
 - Job is `EXPIRED`: show its timeout error, fix provider availability if needed, and submit a new job. Expired execution is never resumed silently.
 - Stream disconnects: replay `/events?after=<lastSequence>` and reopen the authenticated fetch stream.
+- Agent shutdown: `SIGINT`/`SIGTERM` aborts the active runner; restart the agent, then submit a new job after the old job reaches a terminal state.
 - Docker is unavailable: use the backup command and disclose `LOCAL_UNSAFE_BACKUP_ONLY`.
