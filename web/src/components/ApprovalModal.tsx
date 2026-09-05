@@ -2,6 +2,9 @@ import { useState } from 'react';
 import type { CoordinatorJob } from '../api/coordinator';
 import { useStore } from '../store';
 
+const LIME  = '#D4FF00';
+const BLACK = '#0D0D0D';
+
 interface Props {
   job: CoordinatorJob;
   onClose: () => void;
@@ -28,48 +31,100 @@ export default function ApprovalModal({ job, onClose }: Props) {
 
   const parameters = job.input.parameters;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(11,21,38,0.85)' }}>
-      <div className="w-full max-w-md p-8 rounded-card" style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)' }}>
-        <h2 className="font-display text-24 mb-2 text-center">Approve this render?</h2>
-        <p className="text-12 text-center mb-6" style={{ color: 'var(--pm-muted)' }}>The coordinator will revalidate this policy again when the agent claims the job.</p>
-
-        <div className="rounded-input p-4 mb-6 space-y-2 text-13 font-mono" style={{ background: 'var(--pm-raised)', border: '1px solid var(--pm-line)' }}>
-          {[
-            ['Workload', 'MANDELBROT_RENDER'],
-            ['Canvas', `${parameters.width} × ${parameters.height}`],
-            ['Iterations', String(parameters.maxIterations)],
-            ['Palette', parameters.palette],
-            ['Centre', `${parameters.centerX}, ${parameters.centerY}`],
-            ['Zoom', `${parameters.zoom}×`],
-            ['Requested runtime', `${job.input.requestedRuntimeMs} ms`],
-            ['Policy runtime', capability === undefined ? 'Unavailable' : `${capability.maxRuntimeMs} ms`],
-            ['Parallel slots', capability === undefined ? 'Unavailable' : String(capability.maxConcurrentJobs)],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4">
-              <span style={{ color: 'var(--pm-muted)' }}>{label}</span>
-              <span className="text-right" style={{ color: 'var(--pm-text)' }}>{value}</span>
-            </div>
-          ))}
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 50,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.82)',
+    }}>
+      <div style={{
+        width: '100%', maxWidth: '440px',
+        background: '#FFFFFF',
+        border: `3px solid ${BLACK}`,
+        boxShadow: `8px 8px 0 ${LIME}`,
+        borderRadius: '4px',
+        overflow: 'hidden',
+      }}>
+        {/* Header strip */}
+        <div style={{
+          background: BLACK,
+          padding: '16px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <span style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '18px', color: '#FFFFFF', letterSpacing: '0.02em' }}>
+            APPROVE JOB?
+          </span>
+          <span style={{ color: LIME, fontFamily: 'JetBrains Mono', fontSize: '11px' }}>EXPLICIT CONSENT</span>
         </div>
 
-        {error !== null && <p className="text-12 mb-3" style={{ color: 'var(--pm-stop)' }}>{error}</p>}
-        <div className="flex gap-3">
-          <button
-            onClick={() => { void act(() => rejectJob(job.id)); }}
-            disabled={busy}
-            className="flex-1 py-2.5 rounded-input text-15 font-medium disabled:opacity-50"
-            style={{ border: '1px solid var(--pm-line)', color: 'var(--pm-muted)', background: 'transparent' }}
-          >
-            Reject
-          </button>
-          <button
-            onClick={() => { void act(() => approveJob(job.id)); }}
-            disabled={busy || capability === undefined}
-            className="flex-1 py-2.5 rounded-input text-15 font-medium disabled:opacity-50"
-            style={{ border: '1px solid var(--pm-gold-dim)', color: 'var(--pm-gold)', background: 'color-mix(in srgb, var(--pm-gold) 10%, transparent)' }}
-          >
-            {busy ? 'Updating…' : 'Approve and run'}
-          </button>
+        {/* Job details */}
+        <div style={{ padding: '20px 24px' }}>
+          <p style={{ color: '#666', fontSize: '12px', lineHeight: 1.5, marginBottom: '14px' }}>
+            The coordinator revalidates this policy when the agent claims the job. There is no automatic approval or rejection timer.
+          </p>
+          <div style={{
+            background: '#F2F1EC',
+            border: `2px solid ${BLACK}`,
+            borderRadius: '3px',
+            padding: '14px 16px',
+            marginBottom: '20px',
+            fontFamily: 'JetBrains Mono',
+            fontSize: '13px',
+          }}>
+            {[
+              ['Workload', 'MANDELBROT_RENDER'],
+              ['Canvas', `${parameters.width} × ${parameters.height}`],
+              ['Iterations', String(parameters.maxIterations)],
+              ['Palette', parameters.palette],
+              ['Centre', `${parameters.centerX}, ${parameters.centerY}`],
+              ['Zoom', `${parameters.zoom}×`],
+              ['Requested runtime', `${job.input.requestedRuntimeMs} ms`],
+              ['Policy runtime', capability === undefined ? 'Unavailable' : `${capability.maxRuntimeMs} ms`],
+              ['Parallel slots', capability === undefined ? 'Unavailable' : String(capability.maxConcurrentJobs)],
+            ].map(([label, value]) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', padding: '3px 0', borderBottom: '1px solid #E0DED8' }}>
+                <span style={{ color: '#888' }}>{label}</span>
+                <span style={{ color: BLACK, fontWeight: 500, textAlign: 'right' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {error !== null && <p style={{ color: '#FF2424', fontSize: '12px', marginBottom: '12px' }}>{error}</p>}
+
+          {/* Buttons */}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => { void act(() => rejectJob(job.id)); }}
+              disabled={busy}
+              className="neo-btn"
+              style={{
+                flex: 1,
+                padding: '11px 16px',
+                fontSize: '14px',
+                background: 'transparent',
+                color: BLACK,
+                borderColor: BLACK,
+              }}
+            >
+              Decline
+            </button>
+            <button
+              onClick={() => { void act(() => approveJob(job.id)); }}
+              disabled={busy || capability === undefined}
+              className="neo-btn"
+              style={{
+                flex: 2,
+                padding: '11px 16px',
+                fontSize: '14px',
+                background: LIME,
+                color: BLACK,
+                borderColor: BLACK,
+              }}
+            >
+              {busy ? 'Updating…' : '✓ Approve and run'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

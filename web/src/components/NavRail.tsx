@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Network, Monitor, Upload, Home, User, ChevronDown } from 'lucide-react';
-import { clsx } from 'clsx';
 import { useStore, type ViewingIdentity } from '../store';
 
 const NAV = [
@@ -16,11 +15,11 @@ const IDENTITIES: { id: ViewingIdentity; label: string }[] = [
   { id: 'kavya', label: 'Kavya · Requester' },
 ];
 
-const NAV_BG    = '#0B1526';
-const NAV_HI    = '#172540';
-const NAV_GOLD  = '#C9A24A';
-const NAV_TEXT  = '#C8D8EC';
-const NAV_MUTED = '#5E7A98';
+const BG      = '#0D0D0D';
+const HI      = '#1A1A1A';
+const LIME    = '#D4FF00';
+const TEXT    = '#F0F0F0';
+const MUTED   = '#888888';
 
 export default function NavRail() {
   const viewingAs = useStore(s => s.viewingAs);
@@ -41,90 +40,113 @@ export default function NavRail() {
   return (
     <nav
       className="flex flex-col flex-shrink-0"
-      style={{ width: 192, background: NAV_BG, borderRight: '1px solid #172040' }}
+      style={{ width: 192, background: BG, borderRight: `3px solid ${LIME}` }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-4 mb-2">
-        <svg viewBox="0 0 28 28" width="28" height="28" style={{ flexShrink: 0 }}>
-          <path d="M14 3 L25 9 L25 21 L14 27 L3 21 L3 9 Z" fill="none" stroke={NAV_GOLD} strokeWidth="1.8" />
-          <circle cx="14" cy="14" r="3" fill={NAV_GOLD} />
-        </svg>
-        <span className="font-display text-15 tracking-wide" style={{ color: NAV_GOLD }}>
-          PowerMesh
-        </span>
+      <div className="px-4 py-5 mb-1" style={{ borderBottom: `1px solid #222` }}>
+        <div className="flex items-center gap-2.5">
+          <svg viewBox="0 0 28 28" width="22" height="22" style={{ flexShrink: 0 }}>
+            <path d="M14 2 L26 9 L26 23 L14 26 L2 23 L2 9 Z" fill="none" stroke={LIME} strokeWidth="2.5" />
+            <circle cx="14" cy="14" r="3.5" fill={LIME} />
+          </svg>
+          <span style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '15px', color: LIME, letterSpacing: '0.04em' }}>
+            POWERMESH
+          </span>
+        </div>
       </div>
 
       {/* Nav links */}
-      <div className="flex flex-col gap-0.5 px-2">
+      <div className="flex flex-col gap-0.5 px-2 pt-3">
         {NAV.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
-            className={({ isActive }) => clsx(
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-13 font-medium transition-colors duration-150',
-              isActive
-                ? 'text-white'
-                : 'hover:text-white',
-            )}
             style={({ isActive }) => ({
-              color: isActive ? '#fff' : NAV_MUTED,
-              background: isActive ? NAV_HI : 'transparent',
-              borderLeft: isActive ? `3px solid ${NAV_GOLD}` : '3px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '9px 12px',
+              borderRadius: '3px',
+              fontSize: '13px',
+              fontWeight: isActive ? 700 : 500,
+              color: isActive ? '#0D0D0D' : MUTED,
+              background: isActive ? LIME : 'transparent',
+              textDecoration: 'none',
+              transition: 'color 0.1s, background 0.1s',
+              border: isActive ? `2px solid #0D0D0D` : '2px solid transparent',
             })}
+            onMouseEnter={e => {
+              const el = e.currentTarget as HTMLElement;
+              if (!el.style.background || el.style.background === 'transparent')
+                el.style.color = TEXT;
+            }}
+            onMouseLeave={e => {
+              const el = e.currentTarget as HTMLElement;
+              if (el.style.background === 'transparent')
+                el.style.color = MUTED;
+            }}
           >
-            <Icon size={15} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-            {label}
+            {({ isActive }) => (
+              <>
+                <Icon size={14} strokeWidth={isActive ? 2.5 : 2} style={{ flexShrink: 0 }} />
+                {label}
+              </>
+            )}
           </NavLink>
         ))}
       </div>
 
-      {/* Spacer */}
       <div className="flex-1" />
 
       {/* Identity switcher */}
-      <div className="px-2 pb-4" ref={identityRef}>
+      <div className="px-2 pb-4" ref={identityRef} style={{ borderTop: '1px solid #222', paddingTop: '12px' }}>
         <button
           onClick={() => setIdentityOpen(v => !v)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-13 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-13 transition-colors"
           style={{
-            color: NAV_TEXT,
-            background: identityOpen ? NAV_HI : 'transparent',
+            color: TEXT,
+            background: identityOpen ? HI : 'transparent',
+            border: `2px solid ${identityOpen ? '#333' : 'transparent'}`,
+            borderRadius: '3px',
+            cursor: 'pointer',
           }}
-          onMouseEnter={e => { if (!identityOpen) e.currentTarget.style.background = NAV_HI; }}
-          onMouseLeave={e => { if (!identityOpen) e.currentTarget.style.background = 'transparent'; }}
         >
           <div
-            className="w-6 h-6 rounded-full flex items-center justify-center text-11 font-mono font-medium flex-shrink-0"
-            style={{ background: '#24405F', color: NAV_GOLD }}
+            className="w-6 h-6 flex items-center justify-center text-11 font-medium flex-shrink-0"
+            style={{ background: LIME, color: '#0D0D0D', borderRadius: '2px', fontFamily: 'JetBrains Mono', fontWeight: 700 }}
           >
             {viewingAs.slice(0, 2).toUpperCase()}
           </div>
-          <span className="flex-1 text-left" style={{ color: NAV_TEXT }}>{viewingAs}</span>
-          <ChevronDown size={12} style={{ color: NAV_MUTED, transform: identityOpen ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+          <span className="flex-1 text-left" style={{ color: TEXT, fontWeight: 500 }}>{viewingAs}</span>
+          <ChevronDown size={12} style={{ color: MUTED, transform: identityOpen ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
         </button>
 
         {identityOpen && (
           <div
-            className="mt-1 rounded-lg overflow-hidden"
-            style={{ background: NAV_HI, border: '1px solid #24405F' }}
+            className="mt-1 overflow-hidden"
+            style={{ background: HI, border: '2px solid #333', borderRadius: '3px' }}
           >
-            <div className="px-3 py-1.5 text-11 uppercase tracking-wider" style={{ color: NAV_MUTED }}>
+            <div className="px-3 py-1.5 neo-label" style={{ color: MUTED }}>
               Viewing as
             </div>
             {IDENTITIES.map(({ id, label }) => (
               <button
                 key={id}
-                className="w-full flex items-center gap-2 px-3 py-2 text-13 text-left transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 text-13 text-left"
                 style={{
-                  color: viewingAs === id ? NAV_GOLD : NAV_TEXT,
-                  background: viewingAs === id ? 'rgba(201,162,74,0.12)' : 'transparent',
+                  color: viewingAs === id ? LIME : TEXT,
+                  background: viewingAs === id ? 'rgba(212,255,0,0.1)' : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: viewingAs === id ? 700 : 400,
+                  transition: 'background 0.1s',
                 }}
                 onMouseEnter={e => { if (viewingAs !== id) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
                 onMouseLeave={e => { if (viewingAs !== id) e.currentTarget.style.background = 'transparent'; }}
                 onClick={() => { setViewingAs(id); setIdentityOpen(false); }}
               >
-                <User size={12} />
+                <User size={11} style={{ color: viewingAs === id ? LIME : MUTED }} />
                 {label}
               </button>
             ))}

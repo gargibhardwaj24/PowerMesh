@@ -1,6 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Power, Clock, Link as LinkIcon } from 'lucide-react';
-import { clsx } from 'clsx';
 import type { Capability, Job } from '../api/types';
 import { useTicker } from '../hooks/useElapsed';
 
@@ -30,8 +29,13 @@ function cardState(cap: Capability, runningJob?: Job | null): CardState {
   return 'live';
 }
 
+const LIME  = '#D4FF00';
+const BLACK = '#0D0D0D';
+const GREEN = '#00E676';
+const RED   = '#FF2424';
+
 export default function CapabilityCard({ capability: cap, runningJob, variant = 'provider', onToggle, onRevoke }: Props) {
-  const state = cardState(cap, runningJob);
+  const state  = cardState(cap, runningJob);
   const isLive = state === 'live' || state === 'live-busy';
   const ticker = useTicker(runningJob?.started_at ?? null);
 
@@ -39,153 +43,187 @@ export default function CapabilityCard({ capability: cap, runningJob, variant = 
     ? new Date(cap.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
+  /* top accent strip color */
+  const stripColor = state === 'revoked' ? RED : isLive ? LIME : '#CCCCCC';
+
   return (
     <motion.div
       layout
-      className="relative overflow-hidden rounded-card"
       style={{
-        background: 'var(--pm-surface)',
-        border: `1px solid ${isLive ? 'var(--pm-gold-dim)' : 'var(--pm-line)'}`,
+        position: 'relative',
+        overflow: 'hidden',
+        background: '#FFFFFF',
+        border: `2.5px solid ${BLACK}`,
+        boxShadow: state === 'revoked' ? 'none' : '3px 3px 0 #0D0D0D',
+        borderRadius: '4px',
         opacity: state === 'revoked' ? 0.55 : 1,
-        transition: 'border-color 400ms, opacity 400ms',
+        transition: 'box-shadow 300ms, opacity 400ms',
         pointerEvents: state === 'revoked' ? 'none' : undefined,
       }}
     >
-      {/* REVOKED band */}
+      {/* Color accent strip at top */}
+      <div style={{ height: '4px', background: stripColor, transition: 'background 400ms' }} />
+
+      {/* REVOKED stamp */}
       <AnimatePresence>
         {state === 'revoked' && (
           <motion.div
-            initial={{ opacity: 0, scaleX: 0 }}
-            animate={{ opacity: 1, scaleX: 1 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none"
-            style={{ background: 'color-mix(in srgb, var(--pm-stop) 8%, transparent)' }}
+            style={{
+              position: 'absolute', inset: 0, zIndex: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'none',
+              background: 'rgba(255,36,36,0.07)',
+            }}
           >
-            <span
-              className="font-mono text-18 font-medium tracking-widest px-3 py-1 rounded"
-              style={{
-                color: 'var(--pm-stop)',
-                border: '1.5px solid var(--pm-stop)',
-                transform: 'rotate(-8deg)',
-                userSelect: 'none',
-              }}
-            >
+            <span style={{
+              fontFamily: 'JetBrains Mono',
+              fontSize: '16px',
+              fontWeight: 700,
+              letterSpacing: '0.2em',
+              color: RED,
+              border: `2px solid ${RED}`,
+              padding: '4px 10px',
+              transform: 'rotate(-8deg)',
+              userSelect: 'none',
+              background: 'white',
+            }}>
               REVOKED
             </span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="p-4">
+      <div style={{ padding: '14px 16px' }}>
         {/* Header */}
-        <div className="flex items-start justify-between mb-2 gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Status dot */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            {/* Live dot */}
             <motion.span
-              className={clsx(
-                'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                state === 'live-busy' && 'pulse-dot',
-              )}
+              className={state === 'live-busy' ? 'pulse-dot' : ''}
               style={{
-                background: isLive ? 'var(--pm-gold)' : 'var(--pm-faint)',
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: isLive ? GREEN : '#CCCCCC',
+                border: `1.5px solid ${BLACK}`,
                 transition: 'background 400ms',
+                display: 'block',
               }}
             />
-            <div className="min-w-0">
-              <div className="font-display text-15 leading-tight truncate">{cap.label}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '14px', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {cap.label}
+              </div>
               {cap.model_id && (
-                <div className="text-11 font-mono mt-0.5 truncate" style={{ color: 'var(--pm-muted)' }}>
+                <div style={{ fontSize: '11px', fontFamily: 'JetBrains Mono', color: '#888', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {cap.model_id}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Provider toggle */}
+          {/* Toggle button */}
           {variant === 'provider' && !cap.revoked && (
             <button
               onClick={() => onToggle?.(cap.id, !cap.enabled)}
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-input transition-colors"
-              style={{
-                color: isLive ? 'var(--pm-gold)' : 'var(--pm-faint)',
-                background: 'var(--pm-raised)',
-                border: `1px solid ${isLive ? 'var(--pm-gold-dim)' : 'var(--pm-line)'}`,
-              }}
               title={cap.enabled ? 'Disable capability' : 'Enable capability'}
+              style={{
+                flexShrink: 0,
+                width: '30px', height: '30px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: isLive ? LIME : '#F0F0F0',
+                border: `2px solid ${BLACK}`,
+                borderRadius: '3px',
+                color: BLACK,
+                cursor: 'pointer',
+                boxShadow: '1px 1px 0 #0D0D0D',
+                transition: 'background 200ms',
+              }}
             >
-              <Power size={14} />
+              <Power size={12} />
             </button>
           )}
         </div>
 
         {/* Metrics grid */}
-        <div
-          className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-12 font-mono p-2 rounded-input mb-2"
-          style={{ background: 'var(--pm-raised)', border: '1px solid var(--pm-line)' }}
-        >
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr',
+          gap: '2px 16px',
+          fontSize: '11px', fontFamily: 'JetBrains Mono',
+          padding: '8px 10px',
+          background: '#F2F1EC',
+          border: `1.5px solid ${BLACK}`,
+          borderRadius: '2px',
+          marginBottom: '8px',
+        }}>
           {[
-            ['runtime',  formatSec(cap.max_runtime_sec)],
-            ['memory',   formatMb(cap.max_memory_mb)],
-            ['cpu',      `${cap.max_cpu_cores} core${cap.max_cpu_cores !== 1 ? 's' : ''}`],
-            ['items',    `${cap.max_input_items} max`],
-            ['quota',    `${cap.jobs_per_hour}/hr`],
-            ['used',     String(cap.jobs_used_this_hour)],
+            ['runtime', formatSec(cap.max_runtime_sec)],
+            ['memory',  formatMb(cap.max_memory_mb)],
+            ['cpu',     `${cap.max_cpu_cores} core${cap.max_cpu_cores !== 1 ? 's' : ''}`],
+            ['items',   `${cap.max_input_items} max`],
+            ['quota',   `${cap.jobs_per_hour}/hr`],
+            ['used',    String(cap.jobs_used_this_hour)],
           ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-1">
-              <span style={{ color: 'var(--pm-muted)' }}>{label}</span>
-              <span style={{ color: 'var(--pm-text)' }}>{value}</span>
+            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
+              <span style={{ color: '#888' }}>{label}</span>
+              <span style={{ color: BLACK, fontWeight: 500 }}>{value}</span>
             </div>
           ))}
         </div>
 
         {/* Permission flags */}
-        <div className="flex items-center gap-3 text-11 font-mono mb-2">
-          <span style={{ color: 'var(--pm-ok)' }} title="Network access: disabled">
-            ⊘ network
-          </span>
-          <span style={{ color: 'var(--pm-ok)' }} title="Filesystem access: disabled">
-            ⊘ filesystem
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', fontFamily: 'JetBrains Mono', marginBottom: '6px' }}>
+          <span style={{ color: GREEN, fontWeight: 700 }}>⊘ net</span>
+          <span style={{ color: GREEN, fontWeight: 700 }}>⊘ fs</span>
           {expiresLabel && (
-            <span className="flex items-center gap-1" style={{ color: 'var(--pm-muted)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#888' }}>
               <Clock size={9} />
               expires {expiresLabel}
             </span>
           )}
         </div>
 
-        {/* Divider + Running job strip */}
+        {/* Running job strip */}
         <AnimatePresence>
           {state === 'live-busy' && runningJob && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+              style={{ overflow: 'hidden' }}
             >
-              <div className="pt-2" style={{ borderTop: '1px solid var(--pm-line)' }}>
-                <div className="flex items-center gap-2 text-11 font-mono" style={{ color: 'var(--pm-run)' }}>
+              <div style={{ paddingTop: '8px', borderTop: `1.5px solid ${BLACK}`, marginTop: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontFamily: 'JetBrains Mono', color: '#0057FF' }}>
                   <LinkIcon size={10} />
-                  <span>running: {runningJob.id}</span>
-                  <span className="ml-auto">{ticker}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {runningJob.id}
+                  </span>
+                  <span style={{ flexShrink: 0, color: LIME, background: BLACK, padding: '1px 5px', borderRadius: '2px', fontWeight: 700 }}>
+                    {ticker}
+                  </span>
                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Revoke button */}
+        {/* Revoke */}
         {variant === 'provider' && isLive && onRevoke && (
-          <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--pm-line)' }}>
+          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid #E5E5E5` }}>
             <button
               onClick={() => onRevoke(cap.id)}
-              className="text-11 font-mono transition-colors"
-              style={{ color: 'var(--pm-stop)', opacity: 0.7 }}
+              style={{
+                fontSize: '11px', fontFamily: 'JetBrains Mono',
+                color: RED, background: 'transparent', border: 'none',
+                cursor: 'pointer', fontWeight: 700, letterSpacing: '0.04em',
+                opacity: 0.7,
+                transition: 'opacity 0.15s',
+              }}
               onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
               onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
             >
-              Revoke capability
+              Revoke capability ×
             </button>
           </div>
         )}
