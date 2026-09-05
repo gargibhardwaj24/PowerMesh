@@ -19,6 +19,7 @@ coverage/
 # Data / runtime artifacts
 data/
 work/
+demo-output/
 *.db
 *.db-shm
 *.db-wal

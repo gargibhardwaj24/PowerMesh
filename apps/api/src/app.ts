@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import {
+  parseAgentHeartbeatInput,
   parseCapabilityCreateInput,
   parseDemoSessionInput,
   parseDeviceCreateInput,
@@ -166,6 +167,24 @@ function openJobStream(
 export function createApiApplication(config: ApiConfig): ApiApplication {
   const events = new JobEventBus();
   const store = new SqliteStore(config.databasePath, events);
+  const sweepStalledJobs = (): void => {
+    try {
+      const expired = store.expireStaleJobs(config.jobExpiry);
+      if (expired.length > 0) {
+        console.info(
+          JSON.stringify({
+            level: "info",
+            message: "Expired stalled jobs",
+            jobIds: expired.map((job) => job.id)
+          })
+        );
+      }
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", message: "Job expiry sweep failed", error: String(error) }));
+    }
+  };
+  const jobExpirySweep = setInterval(sweepStalledJobs, config.jobSweepIntervalMs);
+  jobExpirySweep.unref();
 
   const server = createServer((request, response) => {
     const requestId = randomUUID();
@@ -211,7 +230,7 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
 
         if (method === "GET" && url.pathname === "/api/devices") {
           const claims = requireSession(request, config, "PROVIDER");
-          sendData(response, requestId, 200, store.listDevices(claims.sub));
+          sendData(response, requestId, 200, store.listDevices(claims.sub, config.heartbeatStaleMs));
           return;
         }
 
@@ -219,7 +238,8 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
         if (method === "POST" && heartbeatMatch?.[1] !== undefined) {
           const agent = authenticateAgent(request, store);
           if (agent.deviceId !== heartbeatMatch[1]) throw new AppError(403, "FORBIDDEN", "Agent device ID does not match route");
-          sendData(response, requestId, 200, store.heartbeat(agent.deviceId));
+          const input = validated(parseAgentHeartbeatInput(await readJsonBody(request, config.maxBodyBytes)));
+          sendData(response, requestId, 200, store.heartbeat(agent.deviceId, input));
           return;
         }
 
@@ -418,6 +438,9 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
     })();
   });
 
-  server.once("close", () => store.close());
+  server.once("close", () => {
+    clearInterval(jobExpirySweep);
+    store.close();
+  });
   return { server, store, events };
 }

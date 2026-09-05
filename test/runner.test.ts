@@ -4,7 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { JobCreateInput } from "../packages/contracts/src/index.js";
+import { detectHardwareSnapshot } from "../apps/agent/src/hardware.js";
 import { runWorkloadJob } from "../apps/agent/src/runner.js";
+
+void test("provider agent reports bounded host hardware without claiming unsupported accelerators", () => {
+  const hardware = detectHardwareSnapshot("local");
+  assert.ok(hardware.logicalCores >= 1);
+  assert.ok(hardware.memoryMb >= 128);
+  assert.ok(hardware.cpuModel.length >= 2);
+  assert.match(hardware.nodeVersion, /^v\d+/);
+  assert.equal(hardware.executionIsolation, "LOCAL_UNSAFE");
+});
 
 void test("local demo runner executes the exact allowlisted workload contract", async (context) => {
   const workRoot = await mkdtemp(join(tmpdir(), "powermesh-runner-test-"));
