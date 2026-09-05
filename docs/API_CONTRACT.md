@@ -38,6 +38,17 @@ SUBMITTED -> QUEUED -> AWAITING_APPROVAL -> APPROVED -> RUNNING -> COMPLETED
 
 Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`, `KILLED`, `EXPIRED`.
 
+Every non-terminal state also has a coordinator-enforced deadline. Timeout transitions are durable, append a final `STATUS_CHANGED` event, and set `errorCode` plus `errorMessage` on the job:
+
+| State | Default deadline | Timeout error code |
+|---|---:|---|
+| `SUBMITTED` / `QUEUED` | 10 minutes from submission | `QUEUE_TIMEOUT` |
+| `AWAITING_APPROVAL` | 5 minutes after matching | `APPROVAL_TIMEOUT` |
+| `APPROVED` | 1 minute after approval | `AGENT_START_TIMEOUT` |
+| `RUNNING` | requested runtime + 5 seconds after claim | `EXECUTION_TIMEOUT` |
+
+The frontend must treat `EXPIRED` as terminal and stop its stream. A retry creates a new job; expired jobs are not silently rerouted or restarted.
+
 ## Routes
 
 | Method | Route | Auth | Purpose |
@@ -60,7 +71,7 @@ Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`, `KILLED`, `EXPI
 | POST | `/api/jobs/:id/approve` | Matched provider | Approve after capability is revalidated |
 | POST | `/api/jobs/:id/reject` | Matched provider | Reject request |
 | POST | `/api/jobs/:id/cancel` | Requester owner | Cancel non-terminal job |
-| POST | `/api/agent/devices/:id/heartbeat` | Agent | Refresh liveness without bypassing pause |
+| POST | `/api/agent/devices/:id/heartbeat` | Agent | Refresh liveness and validated self-reported hardware without bypassing pause |
 | POST | `/api/agent/jobs/claim` | Agent | Atomically claim one approved assigned job |
 | GET | `/api/agent/jobs/:id/control` | Assigned agent | Poll cancel/kill state |
 | POST | `/api/agent/jobs/:id/progress` | Assigned agent | Append monotonic progress |
@@ -104,7 +115,8 @@ The response contains:
     "ownerId": "uuid",
     "name": "Gargi's Compute Node",
     "platform": "MACOS",
-    "status": "ONLINE",
+    "status": "OFFLINE",
+    "hardware": null,
     "lastHeartbeatAt": "2026-09-04T12:00:00.000Z",
     "createdAt": "2026-09-04T12:00:00.000Z"
   },
@@ -114,7 +126,33 @@ The response contains:
 
 Show/copy `agentToken` once. The backend stores only its SHA-256 hash.
 
-## 3. Publish capability
+The device is intentionally `OFFLINE` until the authenticated provider agent sends its first heartbeat. Device registration alone must never make a provider eligible for matching.
+
+## 3. Agent heartbeat and hardware snapshot
+
+```http
+POST /api/agent/devices/:deviceId/heartbeat
+x-device-id: <deviceId>
+x-agent-token: <one-time agent token>
+Content-Type: application/json
+```
+
+```json
+{
+  "hardware": {
+    "architecture": "ARM64",
+    "logicalCores": 10,
+    "memoryMb": 16384,
+    "cpuModel": "Apple M5",
+    "nodeVersion": "v24.7.0",
+    "executionIsolation": "DOCKER"
+  }
+}
+```
+
+`architecture` is `ARM64`, `X64`, or `OTHER`. `executionIsolation` is `DOCKER` or `LOCAL_UNSAFE`. This snapshot is automatically detected and self-reported by the agent; it is not cryptographic attestation and must not be presented as verified GPU or Apple Neural Engine access.
+
+## 4. Publish capability
 
 ```json
 {
@@ -131,7 +169,12 @@ Show/copy `agentToken` once. The backend stores only its SHA-256 hash.
 }
 ```
 
-## 4. Submit job
+Capability responses include:
+
+- `completedJobs` and `failedJobs` from actual executions on that device.
+- `reliabilityScore`, calculated from those outcomes with a conservative prior. A new provider starts at `0.8`, not an unearned perfect score.
+
+## 5. Submit job
 
 ```json
 {
@@ -153,7 +196,7 @@ Palette: `OCEAN`, `EMBER`, or `MONO`.
 
 If a compatible live provider exists, status is `AWAITING_APPROVAL`; otherwise it is `QUEUED`. The provider card should show requested bounds before enabling Approve.
 
-## 5. Live events
+## 6. Live events
 
 Native `EventSource` cannot attach the Bearer header. Use authenticated `fetch` streaming, and pass the last received sequence to `?after=` after a reconnect. REST event replay is the fallback.
 
@@ -169,7 +212,7 @@ const reader = response.body.getReader();
 
 Abort the controller when the component unmounts or the selected job changes.
 
-## 6. Render result safely
+## 7. Render result safely
 
 Completed jobs return:
 
@@ -195,4 +238,3 @@ const src = `data:image/svg+xml;base64,${job.result.result.dataBase64}`;
 ```
 
 Do not use `dangerouslySetInnerHTML`.
-

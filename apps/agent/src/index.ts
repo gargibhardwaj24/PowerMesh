@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { AgentApiClient, type ClaimedJob } from "./api-client.js";
 import { loadAgentConfig, type AgentConfig } from "./config.js";
+import { detectHardwareSnapshot } from "./hardware.js";
 import { runWorkloadJob } from "./runner.js";
 
 const HEARTBEAT_INTERVAL_MS = 5_000;
@@ -52,6 +53,7 @@ async function executeClaimedJob(client: AgentApiClient, config: AgentConfig, jo
 async function run(): Promise<void> {
   const config = loadAgentConfig();
   const client = new AgentApiClient(config.apiBaseUrl, config.deviceId, config.agentToken);
+  const hardware = detectHardwareSnapshot(config.runner.mode);
   const shutdown = new AbortController();
   process.once("SIGINT", () => shutdown.abort());
   process.once("SIGTERM", () => shutdown.abort());
@@ -62,7 +64,7 @@ async function run(): Promise<void> {
   while (!shutdown.signal.aborted) {
     try {
       if (Date.now() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
-        await client.heartbeat();
+        await client.heartbeat(hardware);
         lastHeartbeat = Date.now();
       }
       const job = await client.claim();
@@ -83,4 +85,3 @@ run().catch((error: unknown) => {
   console.error("PowerMesh provider agent failed to start", error);
   process.exitCode = 1;
 });
-

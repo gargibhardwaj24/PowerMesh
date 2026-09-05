@@ -12,6 +12,11 @@ export const MATCHER_LIMITS = {
   MAX_EXPECTED_LATENCY_MS: 5_000
 } as const;
 
+export const RELIABILITY_PRIOR = {
+  SUCCESSFUL_JOBS: 4,
+  TOTAL_JOBS: 5
+} as const;
+
 export interface MatchCandidate {
   capabilityId: string;
   providerId: string;
@@ -36,6 +41,16 @@ export interface MatchResult extends MatchCandidate {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+export function calculateReliabilityScore(completedJobs: number, failedJobs: number): number {
+  if (!Number.isSafeInteger(completedJobs) || completedJobs < 0 || !Number.isSafeInteger(failedJobs) || failedJobs < 0) {
+    throw new Error("Reliability job counts must be non-negative integers");
+  }
+  return (
+    (RELIABILITY_PRIOR.SUCCESSFUL_JOBS + completedJobs) /
+    (RELIABILITY_PRIOR.TOTAL_JOBS + completedJobs + failedJobs)
+  );
 }
 
 function isCompatible(job: JobCreateInput, candidate: MatchCandidate, now: number): boolean {
@@ -78,4 +93,3 @@ export function selectBestProvider(
     .sort((left, right) => right.score - left.score || left.capabilityId.localeCompare(right.capabilityId));
   return ranked[0] ?? null;
 }
-
