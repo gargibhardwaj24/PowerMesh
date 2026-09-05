@@ -112,7 +112,11 @@ This fallback writes `demo-output/powermesh-result.svg` and clearly reports `LOC
 
 ## Frontend integration
 
-Use [docs/API_CONTRACT.md](docs/API_CONTRACT.md). All JSON responses use a stable `{ data, requestId }` envelope; all failures use `{ error: { code, message, requestId, details? } }`.
+The Vite frontend is connected to the coordinator through a runtime-validated TypeScript client. It creates separate
+requester/provider demo sessions, renders live device and capability state, drives the approval flow, replays and streams
+job events, and displays only coordinator-validated SVG results. All JSON responses use a stable `{ data, requestId }`
+envelope; all failures use `{ error: { code, message, requestId, details? } }`. See
+[docs/API_CONTRACT.md](docs/API_CONTRACT.md) and [docs/FRONTEND_HANDOFF.md](docs/FRONTEND_HANDOFF.md).
 
 ## Honest security boundary
 

@@ -56,6 +56,20 @@ export const MANDELBROT_LIMITS = {
   MAX_RESULT_BYTES: 2_000_000
 } as const;
 
+export const MANDELBROT_VIEW_LIMITS = {
+  MIN_CENTER_X: -2.5,
+  MAX_CENTER_X: 1,
+  MIN_CENTER_Y: -1.5,
+  MAX_CENTER_Y: 1.5,
+  MIN_ZOOM: 0.25,
+  MAX_ZOOM: 50
+} as const;
+
+export const JOB_RUNTIME_LIMITS = {
+  MIN_MS: 1_000,
+  MAX_MS: 60_000
+} as const;
+
 export const HARDWARE_SNAPSHOT_LIMITS = {
   MAX_LOGICAL_CORES: 512,
   MIN_MEMORY_MB: 128,
@@ -295,7 +309,7 @@ export function parseCapabilityCreateInput(input: unknown): ValidationResult<Cap
         MANDELBROT_LIMITS.MIN_ITERATIONS,
         MANDELBROT_LIMITS.MAX_ITERATIONS
       ),
-      maxRuntimeMs: readInteger(policy, "maxRuntimeMs", issues, 1_000, 60_000),
+      maxRuntimeMs: readInteger(policy, "maxRuntimeMs", issues, JOB_RUNTIME_LIMITS.MIN_MS, JOB_RUNTIME_LIMITS.MAX_MS),
       maxConcurrentJobs: readInteger(
         policy,
         "maxConcurrentJobs",
@@ -329,7 +343,13 @@ export function parseJobCreateInput(input: unknown): ValidationResult<JobCreateI
   if (!isOneOf(palette, ["OCEAN", "EMBER", "MONO"] as const)) issues.push("palette is invalid");
   return finish(issues, {
     type: "MANDELBROT_RENDER",
-    requestedRuntimeMs: readInteger(input, "requestedRuntimeMs", issues, 1_000, 60_000),
+    requestedRuntimeMs: readInteger(
+      input,
+      "requestedRuntimeMs",
+      issues,
+      JOB_RUNTIME_LIMITS.MIN_MS,
+      JOB_RUNTIME_LIMITS.MAX_MS
+    ),
     parameters: {
       width: readInteger(parameters, "width", issues, MANDELBROT_LIMITS.MIN_WIDTH, MANDELBROT_LIMITS.MAX_WIDTH),
       height: readInteger(parameters, "height", issues, MANDELBROT_LIMITS.MIN_HEIGHT, MANDELBROT_LIMITS.MAX_HEIGHT),
@@ -341,9 +361,27 @@ export function parseJobCreateInput(input: unknown): ValidationResult<JobCreateI
         MANDELBROT_LIMITS.MAX_ITERATIONS
       ),
       palette: isOneOf(palette, ["OCEAN", "EMBER", "MONO"] as const) ? palette : "OCEAN",
-      centerX: readNumber(parameters, "centerX", issues, -2.5, 1),
-      centerY: readNumber(parameters, "centerY", issues, -1.5, 1.5),
-      zoom: readNumber(parameters, "zoom", issues, 0.25, 50)
+      centerX: readNumber(
+        parameters,
+        "centerX",
+        issues,
+        MANDELBROT_VIEW_LIMITS.MIN_CENTER_X,
+        MANDELBROT_VIEW_LIMITS.MAX_CENTER_X
+      ),
+      centerY: readNumber(
+        parameters,
+        "centerY",
+        issues,
+        MANDELBROT_VIEW_LIMITS.MIN_CENTER_Y,
+        MANDELBROT_VIEW_LIMITS.MAX_CENTER_Y
+      ),
+      zoom: readNumber(
+        parameters,
+        "zoom",
+        issues,
+        MANDELBROT_VIEW_LIMITS.MIN_ZOOM,
+        MANDELBROT_VIEW_LIMITS.MAX_ZOOM
+      )
     }
   });
 }

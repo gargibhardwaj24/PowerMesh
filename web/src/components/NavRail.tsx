@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Network, Monitor, Upload, Home, User, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useStore } from '../store';
+import { useStore, type ViewingIdentity } from '../store';
 
 const NAV = [
   { to: '/',         icon: Home,    label: 'Overview' },
@@ -11,7 +11,10 @@ const NAV = [
   { to: '/request',  icon: Upload,  label: 'Requester Studio' },
 ];
 
-const IDENTITIES = ['gargi', 'kavya', 'anon'];
+const IDENTITIES: { id: ViewingIdentity; label: string }[] = [
+  { id: 'gargi', label: 'Gargi · Provider' },
+  { id: 'kavya', label: 'Kavya · Requester' },
+];
 
 const NAV_BG    = '#0B1526';
 const NAV_HI    = '#172540';
@@ -109,7 +112,7 @@ export default function NavRail() {
             <div className="px-3 py-1.5 text-11 uppercase tracking-wider" style={{ color: NAV_MUTED }}>
               Viewing as
             </div>
-            {IDENTITIES.map(id => (
+            {IDENTITIES.map(({ id, label }) => (
               <button
                 key={id}
                 className="w-full flex items-center gap-2 px-3 py-2 text-13 text-left transition-colors"
@@ -122,7 +125,7 @@ export default function NavRail() {
                 onClick={() => { setViewingAs(id); setIdentityOpen(false); }}
               >
                 <User size={12} />
-                {id}
+                {label}
               </button>
             ))}
           </div>

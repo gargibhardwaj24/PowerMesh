@@ -658,16 +658,24 @@ export class CoordinatorApi {
         }
       } catch (error) {
         if (stopped || (error instanceof DOMException && error.name === 'AbortError')) return;
-        subscription.onError(
-          error instanceof CoordinatorApiError
-            ? error
-            : new CoordinatorApiError({
+        const streamError = error instanceof CoordinatorApiError
+          ? error
+          : new CoordinatorApiError({
                 code: 'JOB_STREAM_FAILED',
                 message: 'Job event stream disconnected',
                 status: 0,
                 originalError: error,
-              }),
-        );
+              });
+        subscription.onError(streamError);
+        const retryable = streamError.status === 0
+          || streamError.status === 408
+          || streamError.status === 429
+          || streamError.status >= 500;
+        if (!retryable) {
+          stopped = true;
+          subscription.onStateChange?.('closed');
+          return;
+        }
       }
       if (!stopped) {
         subscription.onStateChange?.('reconnecting');

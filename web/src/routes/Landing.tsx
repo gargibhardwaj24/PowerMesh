@@ -85,11 +85,11 @@ export default function Landing() {
         </div>
 
         <h1 className="text-24 font-semibold mb-3" style={{ color: '#E8EEF6' }}>
-          Peer-to-peer compute — no cloud middleman
+          Capability-first compute on trusted peer hardware
         </h1>
         <p className="text-15 max-w-xl mx-auto" style={{ color: '#8FA6C4', lineHeight: 1.7 }}>
-          Share your machine's spare GPU/CPU with people who need it.
-          Or run AI jobs on someone else's hardware — sandboxed, audited, and paid per-job.
+          Providers publish bounded CPU-rendering policies. Requesters submit an allowlisted workload,
+          approve it explicitly, and follow the complete execution audit trail.
         </p>
 
         {/* Live stats */}
@@ -97,13 +97,13 @@ export default function Landing() {
           className="inline-flex items-center gap-8 mt-6 px-6 py-3 rounded-xl"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <StatBox value={summary.devices_online}       label="nodes online" />
+          <StatBox value={summary.onlineDevices}       label="nodes online" />
           <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
-          <StatBox value={summary.capabilities_live}    label="capabilities live" />
+          <StatBox value={summary.activeCapabilities}    label="capabilities live" />
           <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
-          <StatBox value={summary.jobs_running}         label="jobs running" />
+          <StatBox value={summary.runningJobs}         label="jobs running" />
           <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
-          <StatBox value={summary.jobs_completed_today} label="completed today" />
+          <StatBox value={summary.completedJobs} label="completed" />
         </div>
 
         <div className="flex items-center justify-center gap-3 mt-6">
@@ -142,15 +142,15 @@ export default function Landing() {
         <FeatureCard
           icon={Monitor}
           title="Share your compute"
-          desc="Publish your GPU or CPU as a capability. Set limits — max memory, runtime, jobs per hour. Approve each job before it runs. Earn tokens."
+          desc="Register a provider agent, publish bounded Mandelbrot render limits, and approve every matched request before it runs."
           color="#C9A24A"
           onClick={() => navigate('/provider')}
           cta="Open Provider Console"
         />
         <FeatureCard
           icon={Upload}
-          title="Run AI & compute jobs"
-          desc="Upload your input files. Pick a capability type (AI inference, CPU compute, video transcode). We match you to the best available node automatically."
+          title="Run a verified render"
+          desc="Choose image dimensions, iteration depth and palette. The coordinator matches only live providers whose policy fits the request."
           color="#2563EB"
           onClick={() => navigate('/request')}
           cta="Open Requester Studio"
@@ -158,7 +158,7 @@ export default function Landing() {
         <FeatureCard
           icon={Network}
           title="Watch the mesh live"
-          desc="See all online nodes, what capabilities they're offering, and which jobs are running right now. Full job history with match explanations."
+          desc="See online nodes, published capability limits, reliability evidence and durable job states from the coordinator."
           color="#16A34A"
           onClick={() => navigate('/network')}
           cta="Open Network Mesh"
@@ -176,10 +176,10 @@ export default function Landing() {
             <span className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>How it works</span>
           </div>
           <div className="flex flex-col gap-4">
-            <Step n={1} title="Provider publishes a capability" desc="Picks a type (AI inference, CPU compute…), sets limits, and goes live on the mesh." />
-            <Step n={2} title="Requester submits a job" desc="Uploads input files, selects capability type. The mesh automatically scores and matches to the best node." />
-            <Step n={3} title="Provider reviews and approves" desc="A 30-second approval window. The provider sees exactly what will run — requester, input count, limits." />
-            <Step n={4} title="Job runs, results returned" desc="Sandboxed container runs, streams logs. Results arrive with inference times and sandbox audit trail." />
+            <Step n={1} title="Provider publishes a capability" desc="The provider agent reports its CPU and isolation mode, then the owner sets render and concurrency limits." />
+            <Step n={2} title="Requester submits a job" desc="The coordinator validates render parameters and deterministically selects a compatible live provider." />
+            <Step n={3} title="Provider reviews and approves" desc="The provider sees the exact dimensions, iterations, palette and requested runtime before approving." />
+            <Step n={4} title="Job runs, result returns" desc="The agent streams progress and returns a rect-only SVG that the coordinator validates before storage." />
           </div>
         </div>
 
@@ -193,11 +193,11 @@ export default function Landing() {
           </div>
           <div className="flex flex-col gap-3">
             {[
-              ['Network disabled', 'Every container runs with no internet access — code cannot phone home or exfiltrate data.'],
-              ['No host filesystem', 'Jobs get a tmpfs scratch space only. Your actual files are never touched.'],
-              ['Workspace destroyed', 'The moment a job ends, the workspace is wiped. Nothing persists on the provider machine.'],
+              ['Docker network disabled', 'Secure Docker mode runs without internet access; local development mode does not make this claim.'],
+              ['Read-only Docker root', 'Secure Docker mode uses a read-only root filesystem and a bounded temporary workspace.'],
+              ['Workspace cleanup', 'The agent removes each job workspace after completion, failure, cancellation or shutdown.'],
               ['Provider approves every job', 'Nothing runs without an explicit approval click. You see who is asking and what will run.'],
-              ['Kill switch', 'Providers can revoke a capability instantly, mid-job if needed. Full emergency panic stop.'],
+              ['Kill switch', 'Providers can pause the device and terminate its assigned non-terminal jobs immediately.'],
             ].map(([title, desc]) => (
               <div key={title} className="flex gap-3">
                 <div className="mt-1 w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#16A34A20' }}>
@@ -222,9 +222,9 @@ export default function Landing() {
         <div className="flex-1">
           <div className="text-14 font-semibold mb-1" style={{ color: 'var(--pm-text)' }}>Who is this for?</div>
           <div className="text-13" style={{ color: 'var(--pm-muted)', lineHeight: 1.7 }}>
-            <strong style={{ color: 'var(--pm-text)' }}>Providers</strong> — researchers, students, or anyone with a powerful laptop or workstation sitting idle.
-            {' '}<strong style={{ color: 'var(--pm-text)' }}>Requesters</strong> — developers who need occasional bursts of AI inference or compute without paying for a cloud GPU.
-            No accounts, no billing setup. Just peer machines talking directly.
+            <strong style={{ color: 'var(--pm-text)' }}>Providers</strong> — students or teams willing to offer bounded CPU time through an explicit policy.
+            {' '}<strong style={{ color: 'var(--pm-text)' }}>Requesters</strong> — people who need a visual compute job without handing arbitrary code to another machine.
+            Demo sessions remove account setup; the coordinator still enforces role and ownership checks.
           </div>
         </div>
       </div>

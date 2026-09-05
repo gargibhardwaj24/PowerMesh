@@ -2,12 +2,13 @@ import { useStore } from '../store';
 
 export default function ConnectionBanner() {
   const connection = useStore(s => s.connection);
+  const error = useStore(s => s.error);
 
   if (connection === 'open') return null;
 
   const label = connection === 'connecting' ? 'Connecting to coordinator…'
     : connection === 'reconnecting' ? 'Reconnecting to coordinator…'
-    : 'Connection failed — check coordinator';
+    : error ?? 'Connection failed — check coordinator';
 
   return (
     <div

@@ -1,7 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { connectWebSocket, useStore } from './store';
-import { api } from './api';
+import { useStore } from './store';
 import NavRail from './components/NavRail';
 import ConnectionBanner from './components/ConnectionBanner';
 import Landing from './routes/Landing';
@@ -10,22 +9,25 @@ import ProviderConsole from './routes/ProviderConsole';
 import RequesterConsole from './routes/RequesterConsole';
 import JobDetail from './routes/JobDetail';
 
-// Dev helper — expose store and api for browser console debugging
-if (typeof window !== 'undefined') {
-  (window as unknown as Record<string, unknown>).__store = useStore;
-  (window as unknown as Record<string, unknown>).__api = api;
-}
+const REFRESH_INTERVAL_MS = 2_000;
 
 export default function App() {
   const bootstrap = useStore(s => s.bootstrap);
-  const didInit = useRef(false);
+  const refresh = useStore(s => s.refresh);
 
   useEffect(() => {
-    if (didInit.current) return;
-    didInit.current = true;
-    bootstrap();
-    connectWebSocket();
-  }, [bootstrap]);
+    let disposed = false;
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    const start = async () => {
+      await bootstrap();
+      if (!disposed) refreshTimer = setInterval(() => { void refresh(); }, REFRESH_INTERVAL_MS);
+    };
+    void start();
+    return () => {
+      disposed = true;
+      if (refreshTimer !== null) clearInterval(refreshTimer);
+    };
+  }, [bootstrap, refresh]);
 
   return (
     <BrowserRouter>
