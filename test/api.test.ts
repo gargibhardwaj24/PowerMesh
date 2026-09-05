@@ -70,7 +70,14 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
     tokenTtlSeconds: 3_600,
     databasePath: ":memory:",
     maxBodyBytes: 3_000_000,
-    heartbeatStaleMs: 30_000
+    heartbeatStaleMs: 30_000,
+    jobSweepIntervalMs: 1_000,
+    jobExpiry: {
+      queueTtlMs: 600_000,
+      approvalTtlMs: 300_000,
+      startTtlMs: 60_000,
+      runningGraceMs: 5_000
+    }
   };
   const application = createApiApplication(config);
   await new Promise<void>((resolve, reject) => {
@@ -306,6 +313,67 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
     200
   );
 
+  const approvalTimeoutSubmission = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: input
+  });
+  const approvalTimeoutJobId = string(
+    record(
+      record(approvalTimeoutSubmission.body, "approval timeout envelope")["data"],
+      "approval timeout submission"
+    )["id"],
+    "approval timeout job id"
+  );
+  const awaitingApproval = application.store.getJob(approvalTimeoutJobId);
+  if (awaitingApproval === null) assert.fail("approval timeout job must exist");
+  const approvalDeadline = Date.parse(awaitingApproval.updatedAt) + config.jobExpiry.approvalTtlMs;
+  assert.equal(application.store.expireStaleJobs(config.jobExpiry, approvalDeadline)[0]?.errorCode, "APPROVAL_TIMEOUT");
+
+  const startTimeoutSubmission = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: input
+  });
+  const startTimeoutJobId = string(
+    record(record(startTimeoutSubmission.body, "start timeout envelope")["data"], "start timeout submission")["id"],
+    "start timeout job id"
+  );
+  assert.equal(
+    (await request(baseUrl, `/api/jobs/${startTimeoutJobId}/approve`, { method: "POST", token: providerToken })).status,
+    200
+  );
+  const approvedForStart = application.store.getJob(startTimeoutJobId);
+  if (approvedForStart === null) assert.fail("start timeout job must exist");
+  const startDeadline = Date.parse(approvedForStart.updatedAt) + config.jobExpiry.startTtlMs;
+  assert.equal(application.store.expireStaleJobs(config.jobExpiry, startDeadline)[0]?.errorCode, "AGENT_START_TIMEOUT");
+
+  const expiringSubmission = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: input
+  });
+  const expiringJobId = string(
+    record(record(expiringSubmission.body, "expiring submission envelope")["data"], "expiring submission")["id"],
+    "expiring job id"
+  );
+  assert.equal(
+    (await request(baseUrl, `/api/jobs/${expiringJobId}/approve`, { method: "POST", token: providerToken })).status,
+    200
+  );
+  const expiringClaim = await request(baseUrl, "/api/agent/jobs/claim", { method: "POST", agent });
+  assert.equal(expiringClaim.status, 200);
+  const runningJob = application.store.getJob(expiringJobId);
+  if (runningJob?.startedAt === null || runningJob === null) assert.fail("claimed job must have a start timestamp");
+  const executionDeadline =
+    Date.parse(runningJob.startedAt) + input.requestedRuntimeMs + config.jobExpiry.runningGraceMs;
+  const expiredJobs = application.store.expireStaleJobs(config.jobExpiry, executionDeadline);
+  assert.equal(expiredJobs.length, 1);
+  assert.equal(expiredJobs[0]?.id, expiringJobId);
+  assert.equal(expiredJobs[0]?.status, "EXPIRED");
+  assert.equal(expiredJobs[0]?.errorCode, "EXECUTION_TIMEOUT");
+  assert.equal(application.store.expireStaleJobs(config.jobExpiry, executionDeadline).length, 0);
+
   const capabilities = await request(baseUrl, "/api/capabilities", { token: providerToken });
   assert.equal(capabilities.status, 200);
   const capabilityList = record(capabilities.body, "capabilities envelope")["data"];
@@ -314,4 +382,71 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   assert.equal(publishedCapability["completedJobs"], 1);
   assert.equal(publishedCapability["failedJobs"], 1);
   assert.equal(publishedCapability["reliabilityScore"], 5 / 7);
+});
+
+void test("coordinator sweep expires an unmatched queued job and records the timeout", async (context) => {
+  const config: ApiConfig = {
+    host: "127.0.0.1",
+    port: 0,
+    corsOrigin: "http://localhost:3000",
+    authSecret: TEST_SECRET,
+    tokenTtlSeconds: 3_600,
+    databasePath: ":memory:",
+    maxBodyBytes: 3_000_000,
+    heartbeatStaleMs: 30_000,
+    jobSweepIntervalMs: 5,
+    jobExpiry: {
+      queueTtlMs: 25,
+      approvalTtlMs: 300_000,
+      startTtlMs: 60_000,
+      runningGraceMs: 5_000
+    }
+  };
+  const application = createApiApplication(config);
+  await new Promise<void>((resolve, reject) => {
+    application.server.once("error", reject);
+    application.server.listen(0, config.host, resolve);
+  });
+  context.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        application.server.close((error) => (error === undefined ? resolve() : reject(error)));
+      })
+  );
+  const address = application.server.address() as AddressInfo;
+  const baseUrl = `http://${address.address}:${address.port}`;
+  const requesterSession = await request(baseUrl, "/api/auth/demo-session", {
+    method: "POST",
+    body: { name: "Queued Requester", email: "queued@powermesh.demo", role: "REQUESTER" }
+  });
+  const requesterData = record(record(requesterSession.body, "requester envelope")["data"], "requester data");
+  const requesterToken = string(requesterData["token"], "requester token");
+  const submitted = await request(baseUrl, "/api/jobs", {
+    method: "POST",
+    token: requesterToken,
+    body: {
+      type: "MANDELBROT_RENDER",
+      requestedRuntimeMs: 5_000,
+      parameters: {
+        width: 320,
+        height: 240,
+        maxIterations: 100,
+        palette: "MONO",
+        centerX: -0.5,
+        centerY: 0,
+        zoom: 1
+      }
+    }
+  });
+  assert.equal(submitted.status, 201);
+  const jobId = string(record(record(submitted.body, "job envelope")["data"], "job")["id"], "job id");
+  assert.equal(application.store.getJob(jobId)?.status, "QUEUED");
+
+  await waitFor(() => application.store.getJob(jobId)?.status === "EXPIRED", 500);
+  const expired = application.store.getJob(jobId);
+  assert.equal(expired?.errorCode, "QUEUE_TIMEOUT");
+  assert.notEqual(expired?.completedAt, null);
+  const events = application.store.getEventsAfter(jobId, 0);
+  assert.equal(events.at(-1)?.status, "EXPIRED");
+  assert.equal(events.at(-1)?.payload?.["errorCode"], "QUEUE_TIMEOUT");
 });

@@ -26,7 +26,8 @@ The backend contract is stable enough for the first integration pass.
 - `AWAITING_APPROVAL`: show matched provider and waiting state.
 - `APPROVED`: provider approved; agent has not claimed yet.
 - `RUNNING`: show monotonic progress and Cancel.
-- Terminal states: stop the stream and show result or actionable failure.
+- `EXPIRED`: stop the stream, show `errorMessage`, and offer to create a new job. Do not call Rematch for an expired job.
+- Other terminal states: stop the stream and show result or actionable failure.
 - Reconnect: call event replay with the last sequence before reopening the stream.
 
 ## Demo order

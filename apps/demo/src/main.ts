@@ -76,7 +76,14 @@ async function runBackupDemo(): Promise<void> {
     tokenTtlSeconds: 3_600,
     databasePath: ":memory:",
     maxBodyBytes: 3_000_000,
-    heartbeatStaleMs: 30_000
+    heartbeatStaleMs: 30_000,
+    jobSweepIntervalMs: 1_000,
+    jobExpiry: {
+      queueTtlMs: 600_000,
+      approvalTtlMs: 300_000,
+      startTtlMs: 60_000,
+      runningGraceMs: 5_000
+    }
   });
   let listening = false;
   try {

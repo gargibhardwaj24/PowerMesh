@@ -30,6 +30,7 @@ The coordinator is centralized for the MVP. Compute execution is distributed to 
 - Hard policy filtering before deterministic provider scoring.
 - Evidence-based provider reliability derived from completed and failed executions with a conservative Bayesian prior.
 - Guarded job state machine and atomic job claim.
+- Durable deadlines that expire stalled queue, approval, agent-start, and execution states with explicit error codes.
 - Provider approval/rejection, kill switch, explicit resume, and requester cancellation.
 - Authenticated Server-Sent Events with disconnect cleanup and REST replay fallback.
 - Provider heartbeat, stale-provider exclusion, progress, completion, failure, and control polling.
@@ -86,7 +87,7 @@ ALLOW_UNSAFE_LOCAL_RUNNER=true
 npm run check
 ```
 
-The test suite runs a real in-process HTTP server and verifies auth, permissions, device registration, capability publishing, matching, approval, atomic claim, progress, result validation, audit events, SSE cleanup, kill-switch persistence, resume, state transitions, and local runner execution.
+The test suite runs a real in-process HTTP server and verifies auth, permissions, device registration, capability publishing, matching, approval, atomic claim, progress, result validation, audit events, SSE cleanup, kill-switch persistence, resume, state transitions, automatic queued-job expiry, every timeout category, and local runner execution.
 
 For a one-command backup of the complete vertical slice:
 

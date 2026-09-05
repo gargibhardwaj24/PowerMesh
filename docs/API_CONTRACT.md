@@ -38,6 +38,17 @@ SUBMITTED -> QUEUED -> AWAITING_APPROVAL -> APPROVED -> RUNNING -> COMPLETED
 
 Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`, `KILLED`, `EXPIRED`.
 
+Every non-terminal state also has a coordinator-enforced deadline. Timeout transitions are durable, append a final `STATUS_CHANGED` event, and set `errorCode` plus `errorMessage` on the job:
+
+| State | Default deadline | Timeout error code |
+|---|---:|---|
+| `SUBMITTED` / `QUEUED` | 10 minutes from submission | `QUEUE_TIMEOUT` |
+| `AWAITING_APPROVAL` | 5 minutes after matching | `APPROVAL_TIMEOUT` |
+| `APPROVED` | 1 minute after approval | `AGENT_START_TIMEOUT` |
+| `RUNNING` | requested runtime + 5 seconds after claim | `EXECUTION_TIMEOUT` |
+
+The frontend must treat `EXPIRED` as terminal and stop its stream. A retry creates a new job; expired jobs are not silently rerouted or restarted.
+
 ## Routes
 
 | Method | Route | Auth | Purpose |

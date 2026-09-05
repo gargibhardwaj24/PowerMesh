@@ -69,6 +69,7 @@ void test("session token rejects tampering and expiry", () => {
 
 void test("job state machine blocks impossible transitions", () => {
   assert.equal(canTransition("AWAITING_APPROVAL", "APPROVED"), true);
+  assert.equal(canTransition("RUNNING", "EXPIRED"), true);
   assert.equal(canTransition("COMPLETED", "RUNNING"), false);
   assert.throws(() => assertTransition("COMPLETED", "RUNNING"), /Cannot transition/);
 });

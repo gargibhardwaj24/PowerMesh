@@ -167,6 +167,24 @@ function openJobStream(
 export function createApiApplication(config: ApiConfig): ApiApplication {
   const events = new JobEventBus();
   const store = new SqliteStore(config.databasePath, events);
+  const sweepStalledJobs = (): void => {
+    try {
+      const expired = store.expireStaleJobs(config.jobExpiry);
+      if (expired.length > 0) {
+        console.info(
+          JSON.stringify({
+            level: "info",
+            message: "Expired stalled jobs",
+            jobIds: expired.map((job) => job.id)
+          })
+        );
+      }
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", message: "Job expiry sweep failed", error: String(error) }));
+    }
+  };
+  const jobExpirySweep = setInterval(sweepStalledJobs, config.jobSweepIntervalMs);
+  jobExpirySweep.unref();
 
   const server = createServer((request, response) => {
     const requestId = randomUUID();
@@ -420,6 +438,9 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
     })();
   });
 
-  server.once("close", () => store.close());
+  server.once("close", () => {
+    clearInterval(jobExpirySweep);
+    store.close();
+  });
   return { server, store, events };
 }
