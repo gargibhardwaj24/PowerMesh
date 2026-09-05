@@ -7,6 +7,7 @@ import {
   parseJobCreateInput,
   TERMINAL_JOB_STATUSES,
   type AgentHeartbeatInput,
+  type CapabilityControlStatus,
   type CapabilityCreateInput,
   type CapabilityStatus,
   type CapabilityType,
@@ -692,6 +693,66 @@ export class SqliteStore {
     }
   }
 
+  updateCapabilityStatus(
+    providerId: string,
+    capabilityId: string,
+    nextStatus: CapabilityControlStatus,
+    now = Date.now()
+  ): CapabilityRecord {
+    try {
+      return this.#transaction(() => {
+        const capability = this.#requireCapability(capabilityId);
+        if (capability.providerId !== providerId) {
+          throw new AppError(403, "FORBIDDEN", "You do not own this capability");
+        }
+        if (capability.status === "REVOKED") {
+          throw new AppError(409, "CAPABILITY_REVOKED", "A revoked capability must be published again with a full policy");
+        }
+        if (nextStatus === "ACTIVE") {
+          if (Date.parse(capability.expiresAt) <= now) {
+            throw new AppError(409, "CAPABILITY_EXPIRED", "An expired capability must be published again");
+          }
+          const device = this.getDevice(capability.deviceId);
+          if (device === null) throw new AppError(404, "DEVICE_NOT_FOUND", "Provider device was not found");
+          if (device.status === "PAUSED") {
+            throw new AppError(409, "DEVICE_PAUSED", "Resume the provider device before activating its capability");
+          }
+        }
+        if (capability.status === nextStatus) return capability;
+        const updatedAt = new Date(now).toISOString();
+        this.#database.prepare("UPDATE capabilities SET status = ?, updated_at = ? WHERE id = ?").run(
+          nextStatus,
+          updatedAt,
+          capabilityId
+        );
+        return this.#requireCapability(capabilityId);
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new Error("Unable to update provider capability status", { cause: error });
+    }
+  }
+
+  revokeCapability(providerId: string, capabilityId: string): CapabilityRecord {
+    try {
+      return this.#transaction(() => {
+        const capability = this.#requireCapability(capabilityId);
+        if (capability.providerId !== providerId) {
+          throw new AppError(403, "FORBIDDEN", "You do not own this capability");
+        }
+        if (capability.status === "REVOKED") return capability;
+        const updatedAt = new Date().toISOString();
+        this.#database
+          .prepare("UPDATE capabilities SET status = 'REVOKED', updated_at = ? WHERE id = ?")
+          .run(updatedAt, capabilityId);
+        return this.#requireCapability(capabilityId);
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new Error("Unable to revoke provider capability", { cause: error });
+    }
+  }
+
   getNetworkSummary(heartbeatStaleMs: number, now = Date.now()): {
     onlineDevices: number;
     activeCapabilities: number;
@@ -1032,6 +1093,12 @@ export class SqliteStore {
     const row = this.#database.prepare("SELECT * FROM jobs WHERE id = ?").get(jobId);
     if (row === undefined) throw new AppError(404, "JOB_NOT_FOUND", "Job was not found");
     return mapJob(row);
+  }
+
+  #requireCapability(capabilityId: string): CapabilityRecord {
+    const row = this.#database.prepare(`${CAPABILITY_WITH_RELIABILITY_SELECT} WHERE c.id = ?`).get(capabilityId);
+    if (row === undefined) throw new AppError(404, "CAPABILITY_NOT_FOUND", "Provider capability was not found");
+    return mapCapability(row);
   }
 
   #appendEvent(

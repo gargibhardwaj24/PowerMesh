@@ -61,6 +61,8 @@ The frontend must treat `EXPIRED` as terminal and stop its stream. A retry creat
 | POST | `/api/devices/:id/resume` | Provider owner | Explicitly resume device and unexpired capabilities |
 | POST | `/api/capabilities` | Provider | Publish/update the device's render capability |
 | GET | `/api/capabilities` | User | List capabilities |
+| PATCH | `/api/capabilities/:id` | Provider owner | Set an existing capability to `ACTIVE` or `PAUSED` |
+| POST | `/api/capabilities/:id/revoke` | Provider owner | Irreversibly revoke the current capability policy |
 | GET | `/api/network/summary` | User | Dashboard counters |
 | POST | `/api/jobs` | Requester | Submit and synchronously match a job |
 | GET | `/api/jobs` | User | List visible jobs for the current role |
@@ -174,6 +176,10 @@ Capability responses include:
 - `completedJobs` from successful executions and `failedJobs` from explicit failures plus provider-attributable approval, agent-start, and execution timeouts. Unmatched queue timeouts do not penalize a provider.
 - `reliabilityScore`, calculated from those outcomes with a conservative prior. A new provider starts at `0.8`, not an unearned perfect score.
 - `maxConcurrentJobs` accepts 1 through 4. Runtime concurrency is also capped by the provider agent's `AGENT_MAX_PARALLEL_JOBS` setting.
+
+Pause or resume an existing policy with `PATCH /api/capabilities/:id` and `{ "status": "PAUSED" }` or
+`{ "status": "ACTIVE" }`. Activating cannot bypass a paused device or revive an expired/revoked policy. Revocation is a
+separate explicit action; publishing the capability again with a complete policy is required before it can accept work.
 
 ## 5. Submit job
 

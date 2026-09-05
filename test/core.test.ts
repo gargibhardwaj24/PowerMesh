@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   parseAgentHeartbeatInput,
   parseCapabilityCreateInput,
+  parseCapabilityStatusUpdateInput,
   parseJobCreateInput
 } from "../packages/contracts/src/index.js";
 import { AppError } from "../packages/core/src/errors.js";
@@ -67,6 +68,16 @@ void test("capability parser rejects concurrency beyond the agent safety ceiling
   });
   assert.equal(parsed.ok, false);
   if (!parsed.ok) assert.match(parsed.issues.join(" "), /maxConcurrentJobs must be between 1 and 4/);
+});
+
+void test("capability status parser only accepts reversible control states", () => {
+  assert.deepEqual(parseCapabilityStatusUpdateInput({ status: "PAUSED" }), {
+    ok: true,
+    value: { status: "PAUSED" }
+  });
+  const revoked = parseCapabilityStatusUpdateInput({ status: "REVOKED" });
+  assert.equal(revoked.ok, false);
+  if (!revoked.ok) assert.match(revoked.issues.join(" "), /ACTIVE or PAUSED/);
 });
 
 void test("provider reliability uses a bounded Bayesian prior instead of an unearned perfect score", () => {

@@ -158,6 +158,40 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
     }
   });
   assert.equal(capability.status, 201);
+  const capabilityId = string(
+    record(record(capability.body, "capability envelope")["data"], "capability")["id"],
+    "capability id"
+  );
+
+  const invalidCapabilityStatus = await request(baseUrl, `/api/capabilities/${capabilityId}`, {
+    method: "PATCH",
+    token: providerToken,
+    body: { status: "REVOKED" }
+  });
+  assert.equal(invalidCapabilityStatus.status, 422);
+  const forbiddenCapabilityUpdate = await request(baseUrl, `/api/capabilities/${capabilityId}`, {
+    method: "PATCH",
+    token: requesterToken,
+    body: { status: "PAUSED" }
+  });
+  assert.equal(forbiddenCapabilityUpdate.status, 403);
+  const pausedCapability = await request(baseUrl, `/api/capabilities/${capabilityId}`, {
+    method: "PATCH",
+    token: providerToken,
+    body: { status: "PAUSED" }
+  });
+  assert.equal(pausedCapability.status, 200);
+  assert.equal(record(record(pausedCapability.body, "paused capability envelope")["data"], "paused capability")["status"], "PAUSED");
+  const reactivatedCapability = await request(baseUrl, `/api/capabilities/${capabilityId}`, {
+    method: "PATCH",
+    token: providerToken,
+    body: { status: "ACTIVE" }
+  });
+  assert.equal(reactivatedCapability.status, 200);
+  assert.equal(
+    record(record(reactivatedCapability.body, "active capability envelope")["data"], "active capability")["status"],
+    "ACTIVE"
+  );
 
   const input: JobCreateInput = {
     type: "MANDELBROT_RENDER",
@@ -534,6 +568,44 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   );
   assert.equal(capacityClaimedJob["id"], capacityJobId);
   assert.equal(capacityClaimedJob["status"], "RUNNING");
+
+  const otherProviderSession = await request(baseUrl, "/api/auth/demo-session", {
+    method: "POST",
+    body: { name: "Other Provider", email: "other-provider@powermesh.demo", role: "PROVIDER" }
+  });
+  const otherProviderToken = string(
+    record(record(otherProviderSession.body, "other provider envelope")["data"], "other provider data")["token"],
+    "other provider token"
+  );
+  assert.equal(
+    (
+      await request(baseUrl, `/api/capabilities/${capabilityId}`, {
+        method: "PATCH",
+        token: otherProviderToken,
+        body: { status: "PAUSED" }
+      })
+    ).status,
+    403
+  );
+  const revokedCapability = await request(baseUrl, `/api/capabilities/${capabilityId}/revoke`, {
+    method: "POST",
+    token: providerToken
+  });
+  assert.equal(revokedCapability.status, 200);
+  assert.equal(
+    record(record(revokedCapability.body, "revoked capability envelope")["data"], "revoked capability")["status"],
+    "REVOKED"
+  );
+  const forbiddenReactivation = await request(baseUrl, `/api/capabilities/${capabilityId}`, {
+    method: "PATCH",
+    token: providerToken,
+    body: { status: "ACTIVE" }
+  });
+  assert.equal(forbiddenReactivation.status, 409);
+  assert.equal(
+    record(record(forbiddenReactivation.body, "reactivation error envelope")["error"], "reactivation error")["code"],
+    "CAPABILITY_REVOKED"
+  );
 });
 
 void test("coordinator sweep expires an unmatched queued job and records the timeout", async (context) => {

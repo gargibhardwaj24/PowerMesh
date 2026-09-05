@@ -19,6 +19,9 @@ export type CapabilityType = (typeof CAPABILITY_TYPES)[number];
 export const CAPABILITY_STATUSES = ["ACTIVE", "PAUSED", "REVOKED"] as const;
 export type CapabilityStatus = (typeof CAPABILITY_STATUSES)[number];
 
+export const CAPABILITY_CONTROL_STATUSES = ["ACTIVE", "PAUSED"] as const;
+export type CapabilityControlStatus = (typeof CAPABILITY_CONTROL_STATUSES)[number];
+
 export const JOB_STATUSES = [
   "SUBMITTED",
   "QUEUED",
@@ -111,6 +114,10 @@ export interface CapabilityCreateInput {
     maxConcurrentJobs: number;
     expiresAt: string;
   };
+}
+
+export interface CapabilityStatusUpdateInput {
+  status: CapabilityControlStatus;
 }
 
 export interface JobCreateInput {
@@ -299,6 +306,15 @@ export function parseCapabilityCreateInput(input: unknown): ValidationResult<Cap
       expiresAt
     }
   });
+}
+
+export function parseCapabilityStatusUpdateInput(input: unknown): ValidationResult<CapabilityStatusUpdateInput> {
+  if (!isRecord(input)) return { ok: false, issues: ["body must be an object"] };
+  const status = input["status"];
+  if (!isOneOf(status, CAPABILITY_CONTROL_STATUSES)) {
+    return { ok: false, issues: ["status must be ACTIVE or PAUSED"] };
+  }
+  return { ok: true, value: { status } };
 }
 
 export function parseJobCreateInput(input: unknown): ValidationResult<JobCreateInput> {

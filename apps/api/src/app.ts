@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   parseAgentHeartbeatInput,
   parseCapabilityCreateInput,
+  parseCapabilityStatusUpdateInput,
   parseDemoSessionInput,
   parseDeviceCreateInput,
   parseJobCompletionInput,
@@ -94,7 +95,7 @@ function configureHeaders(request: IncomingMessage, response: ServerResponse, co
   }
   response.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
   response.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-agent-token, x-device-id");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
   response.setHeader("Vary", "Origin");
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("X-Frame-Options", "DENY");
@@ -320,6 +321,21 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
         if (method === "GET" && url.pathname === "/api/capabilities") {
           requireSession(request, config);
           sendData(response, requestId, 200, store.listCapabilities());
+          return;
+        }
+
+        const capabilityMatch = /^\/api\/capabilities\/([^/]+)$/.exec(url.pathname);
+        if (method === "PATCH" && capabilityMatch?.[1] !== undefined) {
+          const claims = requireSession(request, config, "PROVIDER");
+          const input = validated(parseCapabilityStatusUpdateInput(await readJsonBody(request, config.maxBodyBytes)));
+          sendData(response, requestId, 200, store.updateCapabilityStatus(claims.sub, capabilityMatch[1], input.status));
+          return;
+        }
+
+        const revokeCapabilityMatch = /^\/api\/capabilities\/([^/]+)\/revoke$/.exec(url.pathname);
+        if (method === "POST" && revokeCapabilityMatch?.[1] !== undefined) {
+          const claims = requireSession(request, config, "PROVIDER");
+          sendData(response, requestId, 200, store.revokeCapability(claims.sub, revokeCapabilityMatch[1]));
           return;
         }
 
