@@ -28,12 +28,16 @@ The coordinator is centralized for the MVP. Compute execution is distributed to 
 - Provider devices remain offline until an authenticated agent heartbeat reports a bounded CPU/memory snapshot and actual runner isolation mode.
 - Durable SQLite state for users, devices, capabilities, jobs, results, and ordered audit events.
 - Hard policy filtering before deterministic provider scoring.
-- Evidence-based provider reliability derived from completed and failed executions with a conservative Bayesian prior.
-- Guarded job state machine and atomic job claim.
+- Evidence-based provider reliability derived from completed, failed, and provider-timeout outcomes with a conservative Bayesian prior.
+- Guarded job state machine and atomic job claim with claim-time liveness, capability-policy, expiry, and capacity revalidation.
 - Durable deadlines that expire stalled queue, approval, agent-start, and execution states with explicit error codes.
 - Provider approval/rejection, kill switch, explicit resume, and requester cancellation.
 - Authenticated Server-Sent Events with disconnect cleanup and REST replay fallback.
+- Bounded API shutdown that drains ordinary requests and force-closes lingering streams after a grace period.
 - Provider heartbeat, stale-provider exclusion, progress, completion, failure, and control polling.
+- Provider results are restricted to canonical base64 and the generated rect-only SVG grammar before persistence.
+- Execution-time heartbeats plus shutdown propagation that terminates the active runner and cleans its workspace.
+- Bounded parallel dispatch that honors both provider capability capacity and the agent's local safety ceiling.
 - Docker runner definition with no network, read-only root filesystem, dropped capabilities, PID/CPU/RAM limits, and `no-new-privileges`.
 - Explicit unsafe local runner for development only.
 
@@ -81,13 +85,15 @@ RUNNER_MODE=local
 ALLOW_UNSAFE_LOCAL_RUNNER=true
 ```
 
+`AGENT_MAX_PARALLEL_JOBS` is independently bounded from 1 to 4. Actual concurrency is the lower of this local ceiling and the published capability's `maxConcurrentJobs`.
+
 ## Verification
 
 ```bash
 npm run check
 ```
 
-The test suite runs a real in-process HTTP server and verifies auth, permissions, device registration, capability publishing, matching, approval, atomic claim, progress, result validation, audit events, SSE cleanup, kill-switch persistence, resume, state transitions, automatic queued-job expiry, every timeout category, and local runner execution.
+The test suite runs a real in-process HTTP server and verifies auth, permissions, device registration, capability publishing, matching, approval, atomic claim, progress, result validation, audit events, SSE cleanup, kill-switch persistence, resume, state transitions, automatic queued-job expiry, every timeout category, execution-time heartbeat, shutdown cleanup, and local runner execution.
 
 For a one-command backup of the complete vertical slice:
 

@@ -72,10 +72,10 @@ The frontend must treat `EXPIRED` as terminal and stop its stream. A retry creat
 | POST | `/api/jobs/:id/reject` | Matched provider | Reject request |
 | POST | `/api/jobs/:id/cancel` | Requester owner | Cancel non-terminal job |
 | POST | `/api/agent/devices/:id/heartbeat` | Agent | Refresh liveness and validated self-reported hardware without bypassing pause |
-| POST | `/api/agent/jobs/claim` | Agent | Atomically claim one approved assigned job |
+| POST | `/api/agent/jobs/claim` | Agent | Atomically claim one approved job after revalidating liveness, policy, expiry, and capacity |
 | GET | `/api/agent/jobs/:id/control` | Assigned agent | Poll cancel/kill state |
 | POST | `/api/agent/jobs/:id/progress` | Assigned agent | Append monotonic progress |
-| POST | `/api/agent/jobs/:id/complete` | Assigned agent | Submit validated SVG result |
+| POST | `/api/agent/jobs/:id/complete` | Assigned agent | Submit a strict rect-only SVG matching the requested dimensions |
 | POST | `/api/agent/jobs/:id/fail` | Assigned agent | Report bounded failure details |
 
 ## 1. Demo session
@@ -171,8 +171,9 @@ Content-Type: application/json
 
 Capability responses include:
 
-- `completedJobs` and `failedJobs` from actual executions on that device.
+- `completedJobs` from successful executions and `failedJobs` from explicit failures plus provider-attributable approval, agent-start, and execution timeouts. Unmatched queue timeouts do not penalize a provider.
 - `reliabilityScore`, calculated from those outcomes with a conservative prior. A new provider starts at `0.8`, not an unearned perfect score.
+- `maxConcurrentJobs` accepts 1 through 4. Runtime concurrency is also capped by the provider agent's `AGENT_MAX_PARALLEL_JOBS` setting.
 
 ## 5. Submit job
 
@@ -238,3 +239,5 @@ const src = `data:image/svg+xml;base64,${job.result.result.dataBase64}`;
 ```
 
 Do not use `dangerouslySetInnerHTML`.
+
+The coordinator rejects non-canonical base64, dimension mismatches, active SVG content, external references, and every element outside the generated `svg`/`rect` grammar.
