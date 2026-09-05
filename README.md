@@ -33,6 +33,7 @@ The coordinator is centralized for the MVP. Compute execution is distributed to 
 - Durable deadlines that expire stalled queue, approval, agent-start, and execution states with explicit error codes.
 - Provider approval/rejection, kill switch, explicit resume, and requester cancellation.
 - Authenticated Server-Sent Events with disconnect cleanup and REST replay fallback.
+- Bounded API shutdown that drains ordinary requests and force-closes lingering streams after a grace period.
 - Provider heartbeat, stale-provider exclusion, progress, completion, failure, and control polling.
 - Provider results are restricted to canonical base64 and the generated rect-only SVG grammar before persistence.
 - Execution-time heartbeats plus shutdown propagation that terminates the active runner and cleans its workspace.
