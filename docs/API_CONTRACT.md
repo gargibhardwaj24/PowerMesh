@@ -173,6 +173,7 @@ Capability responses include:
 
 - `completedJobs` from successful executions and `failedJobs` from explicit failures plus provider-attributable approval, agent-start, and execution timeouts. Unmatched queue timeouts do not penalize a provider.
 - `reliabilityScore`, calculated from those outcomes with a conservative prior. A new provider starts at `0.8`, not an unearned perfect score.
+- `maxConcurrentJobs` accepts 1 through 4. Runtime concurrency is also capped by the provider agent's `AGENT_MAX_PARALLEL_JOBS` setting.
 
 ## 5. Submit job
 

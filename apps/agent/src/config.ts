@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { CAPABILITY_POLICY_LIMITS } from "../../../packages/contracts/src/index.js";
 
 export type RunnerMode = "docker" | "local";
 
@@ -9,6 +10,7 @@ export interface AgentConfig {
   pollMs: number;
   controlPollMs: number;
   heartbeatMs: number;
+  maxParallelJobs: number;
   runner: {
     mode: RunnerMode;
     allowUnsafeLocalRunner: boolean;
@@ -30,6 +32,12 @@ function positiveInteger(name: string, fallback: number): number {
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
   return parsed;
+}
+
+function boundedPositiveInteger(name: string, fallback: number, maximum: number): number {
+  const value = positiveInteger(name, fallback);
+  if (value > maximum) throw new Error(`${name} must be at most ${maximum}`);
+  return value;
 }
 
 function boolean(name: string, fallback: boolean): boolean {
@@ -54,6 +62,11 @@ export function loadAgentConfig(): AgentConfig {
     pollMs: positiveInteger("AGENT_POLL_MS", 1_000),
     controlPollMs: positiveInteger("AGENT_CONTROL_POLL_MS", 500),
     heartbeatMs: positiveInteger("AGENT_HEARTBEAT_MS", 5_000),
+    maxParallelJobs: boundedPositiveInteger(
+      "AGENT_MAX_PARALLEL_JOBS",
+      CAPABILITY_POLICY_LIMITS.MAX_CONCURRENT_JOBS,
+      CAPABILITY_POLICY_LIMITS.MAX_CONCURRENT_JOBS
+    ),
     runner: {
       mode: modeValue,
       allowUnsafeLocalRunner,
