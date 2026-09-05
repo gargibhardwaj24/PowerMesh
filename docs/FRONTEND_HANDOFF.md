@@ -2,6 +2,12 @@
 
 The backend contract is stable enough for the first integration pass.
 
+`web/src/api/coordinator.ts` is the strict browser client for this contract. It parses response envelopes and payloads,
+maps API errors to `CoordinatorApiError`, requires the caller to provide the correct role token, and exposes an
+authenticated job SSE subscription with replay, bounded reconnect backoff, terminal-state shutdown, and explicit cleanup.
+The existing screen store still models the earlier mock AI/WebSocket prototype; migrate screens to this client rather
+than adding compatibility casts or presenting mock fields as real backend evidence.
+
 ## Suggested frontend modules
 
 - `lib/api.ts`: envelope parsing, Bearer token, typed error mapping.

@@ -64,6 +64,13 @@ Start the coordinator:
 npm run dev:api
 ```
 
+Start the frontend in a second terminal. Vite proxies `/api` to the local coordinator on port `8787`:
+
+```bash
+npm --prefix web ci
+npm --prefix web run dev
+```
+
 Build the secure runner image:
 
 ```bash
