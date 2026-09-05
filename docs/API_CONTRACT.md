@@ -75,7 +75,7 @@ The frontend must treat `EXPIRED` as terminal and stop its stream. A retry creat
 | POST | `/api/agent/jobs/claim` | Agent | Atomically claim one approved job after revalidating liveness, policy, expiry, and capacity |
 | GET | `/api/agent/jobs/:id/control` | Assigned agent | Poll cancel/kill state |
 | POST | `/api/agent/jobs/:id/progress` | Assigned agent | Append monotonic progress |
-| POST | `/api/agent/jobs/:id/complete` | Assigned agent | Submit validated SVG result |
+| POST | `/api/agent/jobs/:id/complete` | Assigned agent | Submit a strict rect-only SVG matching the requested dimensions |
 | POST | `/api/agent/jobs/:id/fail` | Assigned agent | Report bounded failure details |
 
 ## 1. Demo session
@@ -239,3 +239,5 @@ const src = `data:image/svg+xml;base64,${job.result.result.dataBase64}`;
 ```
 
 Do not use `dangerouslySetInnerHTML`.
+
+The coordinator rejects non-canonical base64, dimension mismatches, active SVG content, external references, and every element outside the generated `svg`/`rect` grammar.

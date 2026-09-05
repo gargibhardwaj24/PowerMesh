@@ -207,6 +207,19 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   });
   assert.equal(progress.status, 202);
 
+  const activeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240"><style>@import url(https://malicious.invalid/pixel.css);</style></svg>`;
+  const rejectedCompletion = await request(baseUrl, `/api/agent/jobs/${jobId}/complete`, {
+    method: "POST",
+    agent,
+    body: {
+      result: { mimeType: "image/svg+xml", dataBase64: Buffer.from(activeSvg, "utf8").toString("base64") },
+      metrics: { runtimeMs: 1, outputBytes: Buffer.byteLength(activeSvg) }
+    }
+  });
+  assert.equal(rejectedCompletion.status, 422);
+  assert.equal(record(record(rejectedCompletion.body, "unsafe result envelope")["error"], "unsafe result")["code"], "UNSAFE_RESULT");
+  assert.equal(application.store.getJob(jobId)?.status, "RUNNING", "rejected result must not complete the job");
+
   const startedAt = Date.now();
   const svg = renderMandelbrotSvg(input.parameters);
   const completion = {
