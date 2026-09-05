@@ -21,8 +21,8 @@ export default {
         'pm-stop':     'var(--pm-stop)',
       },
       fontFamily: {
-        display: ['Quicksand', 'sans-serif'],
-        ui:      ['Inter', 'sans-serif'],
+        display: ['Syne', 'sans-serif'],
+        ui:      ['Instrument Sans', 'sans-serif'],
         mono:    ['JetBrains Mono', 'monospace'],
       },
       fontSize: {
@@ -35,9 +35,14 @@ export default {
         '11': '0.6875rem',
       },
       borderRadius: {
-        card:   '10px',
-        input:  '6px',
+        card:   '4px',
+        input:  '2px',
         pill:   '9999px',
+      },
+      boxShadow: {
+        'neo':    '4px 4px 0 #0D0D0D',
+        'neo-sm': '2px 2px 0 #0D0D0D',
+        'neo-lg': '6px 6px 0 #0D0D0D',
       },
     },
   },
