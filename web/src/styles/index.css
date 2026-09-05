@@ -1,3 +1,63 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  /* ── Neo-brutalist card ─────────────────────────── */
+  .neo-card {
+    background: var(--pm-surface);
+    border: 2.5px solid var(--pm-line);
+    box-shadow: var(--pm-shadow);
+    border-radius: 4px;
+  }
+  .neo-card-sm {
+    background: var(--pm-surface);
+    border: 2px solid var(--pm-line);
+    box-shadow: var(--pm-shadow-sm);
+    border-radius: 4px;
+  }
+
+  /* ── Neo-brutalist button ───────────────────────── */
+  .neo-btn {
+    border: 2.5px solid var(--pm-line);
+    font-weight: 700;
+    border-radius: 4px;
+    box-shadow: var(--pm-shadow-sm);
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: 'Instrument Sans', sans-serif;
+    letter-spacing: 0.01em;
+  }
+  .neo-btn:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--pm-line);
+  }
+  .neo-btn:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+  }
+  .neo-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ── Neo inset panel ────────────────────────────── */
+  .neo-inset {
+    background: var(--pm-raised);
+    border: 2px solid var(--pm-line);
+    border-radius: 2px;
+  }
+
+  /* ── Label eyebrow ──────────────────────────────── */
+  .neo-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--pm-faint);
+  }
+}

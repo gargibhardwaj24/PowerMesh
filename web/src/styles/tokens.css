@@ -1,31 +1,36 @@
 :root {
-  /* ── Light content area ─────────────────────────── */
-  --pm-void:      #EDF0F7;   /* main bg */
-  --pm-surface:   #FFFFFF;   /* card bg */
-  --pm-raised:    #F4F7FB;   /* inner section / slight lift */
-  --pm-line:      #D1D9E6;   /* borders */
+  /* ── Grounds ─────────────────────────────────────── */
+  --pm-void:      #F2F1EC;   /* warm parchment background */
+  --pm-surface:   #FFFFFF;   /* card / panel surface */
+  --pm-raised:    #EDECEA;   /* inner panels, input fields */
+  --pm-line:      #0D0D0D;   /* borders — near-black */
 
-  --pm-text:      #0D1B30;   /* primary text */
-  --pm-muted:     #4A6080;   /* secondary text */
-  --pm-faint:     #8FA3BF;   /* dim / placeholder */
-  --pm-steel:     #5C7A9A;
+  /* ── Text ───────────────────────────────────────── */
+  --pm-text:      #0D0D0D;
+  --pm-muted:     #454545;
+  --pm-faint:     #888888;
+  --pm-steel:     #666666;
 
-  /* ── Accent colours ─────────────────────────────── */
-  --pm-gold:      #C08A18;   /* live capability (amber) */
-  --pm-gold-dim:  #FEF3C7;
-  --pm-cream:     #FFFBEB;
+  /* ── Power accents ──────────────────────────────── */
+  --pm-gold:      #D4FF00;   /* electric lime — primary action */
+  --pm-gold-dim:  #EEFF99;   /* pale lime */
+  --pm-cream:     #F7FFCC;
 
-  --pm-run:       #2563EB;   /* running – blue */
-  --pm-ok:        #16A34A;   /* success – green */
-  --pm-warn:      #D97706;   /* warning – amber */
-  --pm-stop:      #DC2626;   /* error / revoke – red */
+  --pm-run:       #0057FF;   /* royal blue — running state */
+  --pm-ok:        #00E676;   /* neon green — live / ok */
+  --pm-warn:      #FF8C00;   /* orange — warning */
+  --pm-stop:      #FF2424;   /* vivid red — stop / error */
 
-  /* ── Dark nav chrome (hardcoded in NavRail) ─────── */
-  /* keeping vars so ConnectionBanner can use them    */
-  --pm-nav-bg:    #0B1526;
-  --pm-nav-hi:    #16253d;
-  --pm-nav-text:  #C8D8EC;
-  --pm-nav-muted: #5E7A98;
+  /* ── Dark nav chrome ────────────────────────────── */
+  --pm-nav-bg:    #0D0D0D;
+  --pm-nav-hi:    #1F1F1F;
+  --pm-nav-text:  #D4FF00;
+  --pm-nav-muted: #888888;
+
+  /* ── Neo-brutalist shadows ───────────────────────── */
+  --pm-shadow:    4px 4px 0 #0D0D0D;
+  --pm-shadow-sm: 2px 2px 0 #0D0D0D;
+  --pm-shadow-lg: 6px 6px 0 #0D0D0D;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,14 +39,15 @@ html, body, #root {
   height: 100%;
   background-color: var(--pm-void);
   color: var(--pm-text);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Instrument Sans', 'Inter', sans-serif;
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
 .font-mono    { font-family: 'JetBrains Mono', monospace; font-feature-settings: "tnum"; }
-.font-display { font-family: 'Quicksand', sans-serif; font-weight: 600; }
+.font-display { font-family: 'Syne', sans-serif; font-weight: 800; }
+.font-ui      { font-family: 'Instrument Sans', sans-serif; }
 
 @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @keyframes pulse-dot {
@@ -54,5 +60,5 @@ html, body, #root {
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track  { background: var(--pm-void); }
-::-webkit-scrollbar-thumb  { background: var(--pm-line); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--pm-steel); }
+::-webkit-scrollbar-thumb  { background: var(--pm-line); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--pm-muted); }

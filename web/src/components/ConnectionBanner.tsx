@@ -12,7 +12,7 @@ export default function ConnectionBanner() {
   return (
     <div
       className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center text-13 font-mono py-1.5"
-      style={{ background: 'var(--pm-warn)', color: '#fff' }}
+      style={{ background: '#FF8C00', color: '#0D0D0D', fontWeight: 700, border: '0 0 2px 0', borderBottom: '2px solid #0D0D0D', letterSpacing: '0.04em' }}
     >
       {label}
     </div>

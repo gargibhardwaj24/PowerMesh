@@ -2,210 +2,280 @@ import { useNavigate } from 'react-router-dom';
 import { Monitor, Upload, Network, Lock, Zap, Users } from 'lucide-react';
 import { useStore } from '../store';
 
-function StatBox({ value, label }: { value: number; label: string }) {
+const LIME  = '#D4FF00';
+const BLACK = '#0D0D0D';
+const WHITE = '#FFFFFF';
+const MUTED = '#888888';
+const GREEN = '#00E676';
+
+function StatTile({ value, label }: { value: number; label: string }) {
   return (
-    <div className="text-center">
-      <div className="font-mono text-32 font-medium" style={{ color: 'var(--pm-run)', lineHeight: 1 }}>{value}</div>
-      <div className="text-12 mt-1" style={{ color: 'var(--pm-muted)' }}>{label}</div>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '12px 20px',
+      background: LIME,
+      border: `2.5px solid ${BLACK}`,
+      borderRadius: '4px',
+      minWidth: '90px',
+    }}>
+      <div style={{
+        fontFamily: 'JetBrains Mono',
+        fontWeight: 700,
+        fontSize: '1.75rem',
+        color: BLACK,
+        lineHeight: 1,
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontFamily: 'JetBrains Mono',
+        fontSize: '10px',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: '#454545',
+        marginTop: '5px',
+        textAlign: 'center',
+      }}>
+        {label}
+      </div>
     </div>
   );
 }
 
-function FeatureCard({ icon: Icon, title, desc, color, onClick, cta }: {
-  icon: typeof Monitor; title: string; desc: string; color: string; onClick: () => void; cta: string;
+function FeatureCard({
+  icon: Icon, title, desc, cta, bg, fg, iconColor, onClick,
+}: {
+  icon: typeof Monitor; title: string; desc: string; cta: string;
+  bg: string; fg: string; iconColor: string; onClick: () => void;
 }) {
   return (
     <div
-      className="rounded-2xl p-6 flex flex-col gap-4 cursor-pointer transition-all duration-200"
-      style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(0,0,0,0.10)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'; (e.currentTarget as HTMLElement).style.transform = 'none'; }}
       onClick={onClick}
+      style={{
+        background: bg,
+        border: `2.5px solid ${BLACK}`,
+        boxShadow: '4px 4px 0 #0D0D0D',
+        borderRadius: '4px',
+        padding: '24px',
+        cursor: 'pointer',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0',
+        transition: 'transform 0.08s ease, box-shadow 0.08s ease',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.transform = 'translate(-2px, -2px)';
+        (e.currentTarget as HTMLElement).style.boxShadow = '6px 6px 0 #0D0D0D';
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.transform = 'none';
+        (e.currentTarget as HTMLElement).style.boxShadow = '4px 4px 0 #0D0D0D';
+      }}
     >
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${color}18` }}>
-        <Icon size={20} style={{ color }} />
+      <Icon size={22} style={{ color: iconColor, marginBottom: '16px', flexShrink: 0 }} />
+      <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '1.05rem', color: fg, marginBottom: '8px', lineHeight: 1.2 }}>
+        {title}
       </div>
-      <div>
-        <div className="text-16 font-semibold mb-1" style={{ color: 'var(--pm-text)' }}>{title}</div>
-        <div className="text-13 leading-relaxed" style={{ color: 'var(--pm-muted)' }}>{desc}</div>
+      <div style={{ fontSize: '13px', color: fg === BLACK ? '#454545' : '#AAAAAA', lineHeight: 1.55, marginBottom: '20px', flexGrow: 1 }}>
+        {desc}
       </div>
-      <button
-        className="mt-auto text-13 font-medium px-4 py-1.5 rounded-lg transition-colors"
-        style={{ background: `${color}18`, color, border: `1px solid ${color}40` }}
-      >
+      <span style={{ fontSize: '12px', fontWeight: 700, color: iconColor, letterSpacing: '0.04em', fontFamily: 'JetBrains Mono' }}>
         {cta} →
-      </button>
-    </div>
-  );
-}
-
-function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
-  return (
-    <div className="flex items-start gap-4">
-      <div
-        className="w-7 h-7 rounded-full flex items-center justify-center text-13 font-mono font-semibold flex-shrink-0 mt-0.5"
-        style={{ background: 'var(--pm-run)', color: '#fff' }}
-      >
-        {n}
-      </div>
-      <div>
-        <div className="text-14 font-semibold mb-0.5" style={{ color: 'var(--pm-text)' }}>{title}</div>
-        <div className="text-13" style={{ color: 'var(--pm-muted)' }}>{desc}</div>
-      </div>
+      </span>
     </div>
   );
 }
 
 export default function Landing() {
   const navigate = useNavigate();
-  const summary = useStore(s => s.summary);
+  const summary  = useStore(s => s.summary);
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div style={{ maxWidth: '860px', margin: '0 auto', paddingBottom: '48px' }}>
 
-      {/* Hero */}
-      <div
-        className="rounded-2xl p-10 mb-8 text-center relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #0B1526 0%, #163050 100%)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}
-      >
-        {/* decorative hexagons */}
-        <svg viewBox="0 0 100 100" width="120" height="120" className="absolute opacity-5" style={{ top: -20, right: -20 }}>
-          <path d="M50 10 L85 30 L85 70 L50 90 L15 70 L15 30 Z" fill="none" stroke="#C9A24A" strokeWidth="2" />
-        </svg>
-        <svg viewBox="0 0 100 100" width="80" height="80" className="absolute opacity-5" style={{ bottom: -10, left: 20 }}>
-          <path d="M50 10 L85 30 L85 70 L50 90 L15 70 L15 30 Z" fill="none" stroke="#C9A24A" strokeWidth="2" />
-        </svg>
-
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <svg viewBox="0 0 32 32" width="40" height="40">
-            <path d="M16 3 L29 10 L29 22 L16 29 L3 22 L3 10 Z" fill="none" stroke="#C9A24A" strokeWidth="2" />
-            <circle cx="16" cy="16" r="4" fill="#C9A24A" />
-          </svg>
-          <span className="font-display text-40" style={{ color: '#C9A24A', letterSpacing: '-0.5px' }}>PowerMesh</span>
+      {/* ── Hero — black panel ─────────────────────────────── */}
+      <div style={{
+        background: BLACK,
+        border: `2.5px solid ${BLACK}`,
+        boxShadow: `6px 6px 0 ${LIME}`,
+        borderRadius: '4px',
+        padding: '48px',
+        marginBottom: '20px',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Eyebrow */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '20px',
+          padding: '4px 12px',
+          border: `1.5px solid ${LIME}`,
+          borderRadius: '2px',
+        }}>
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: LIME, display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ color: LIME, fontFamily: 'JetBrains Mono', fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            v1.0 · peer compute layer
+          </span>
         </div>
 
-        <h1 className="text-24 font-semibold mb-3" style={{ color: '#E8EEF6' }}>
-          Peer-to-peer compute — no cloud middleman
+        {/* Headline */}
+        <h1 style={{
+          fontFamily: 'Syne',
+          fontWeight: 800,
+          fontSize: '3.25rem',
+          lineHeight: 1.0,
+          letterSpacing: '-0.02em',
+          color: WHITE,
+          marginBottom: '20px',
+          textWrap: 'balance',
+        }}>
+          Share compute.<br />
+          <span style={{ color: LIME }}>Earn on idle</span><br />
+          hardware.
         </h1>
-        <p className="text-15 max-w-xl mx-auto" style={{ color: '#8FA6C4', lineHeight: 1.7 }}>
-          Share your machine's spare GPU/CPU with people who need it.
-          Or run AI jobs on someone else's hardware — sandboxed, audited, and paid per-job.
+
+        {/* Tagline */}
+        <p style={{ color: '#AAAAAA', fontSize: '15px', maxWidth: '440px', lineHeight: 1.65, marginBottom: '32px' }}>
+          Run AI inference, CPU compute, and video transcode on peer machines —
+          sandboxed, per-approval, no cloud middleman.
         </p>
 
-        {/* Live stats */}
-        <div
-          className="inline-flex items-center gap-8 mt-6 px-6 py-3 rounded-xl"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          <StatBox value={summary.devices_online}       label="nodes online" />
-          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
-          <StatBox value={summary.capabilities_live}    label="capabilities live" />
-          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
-          <StatBox value={summary.jobs_running}         label="jobs running" />
-          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
-          <StatBox value={summary.jobs_completed_today} label="completed today" />
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '36px', flexWrap: 'wrap' }}>
+          <StatTile value={summary.devices_online}       label="nodes online" />
+          <StatTile value={summary.capabilities_live}    label="capabilities live" />
+          <StatTile value={summary.jobs_running}         label="jobs running" />
+          <StatTile value={summary.jobs_completed_today} label="completed today" />
         </div>
 
-        <div className="flex items-center justify-center gap-3 mt-6">
+        {/* CTA buttons */}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             onClick={() => navigate('/provider')}
-            className="px-5 py-2.5 rounded-lg text-14 font-semibold transition-all"
-            style={{ background: '#C9A24A', color: '#0B1526' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#D4AF5A'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#C9A24A'; }}
+            className="neo-btn"
+            style={{ background: LIME, color: BLACK, padding: '10px 22px', fontSize: '14px' }}
           >
             Share my compute
           </button>
           <button
             onClick={() => navigate('/request')}
-            className="px-5 py-2.5 rounded-lg text-14 font-semibold transition-all"
-            style={{ background: 'rgba(255,255,255,0.1)', color: '#E8EEF6', border: '1px solid rgba(255,255,255,0.2)' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.18)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.10)'; }}
+            className="neo-btn"
+            style={{ background: 'transparent', color: WHITE, borderColor: WHITE, padding: '10px 22px', fontSize: '14px' }}
           >
             Run a job
           </button>
           <button
             onClick={() => navigate('/network')}
-            className="px-5 py-2.5 rounded-lg text-14 font-semibold transition-all"
-            style={{ background: 'transparent', color: '#8FA6C4', border: '1px solid rgba(255,255,255,0.12)' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            style={{ color: MUTED, padding: '10px 16px', fontSize: '14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'Instrument Sans', fontWeight: 500 }}
           >
-            View network
+            View network →
           </button>
         </div>
       </div>
 
-      {/* Feature cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      {/* ── Feature cards ─────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
         <FeatureCard
           icon={Monitor}
           title="Share your compute"
-          desc="Publish your GPU or CPU as a capability. Set limits — max memory, runtime, jobs per hour. Approve each job before it runs. Earn tokens."
-          color="#C9A24A"
+          desc="Publish GPU or CPU as a capability. Set limits — max memory, runtime, jobs per hour. Approve each job before it runs."
+          cta="Provider Console"
+          bg={LIME}
+          fg={BLACK}
+          iconColor={BLACK}
           onClick={() => navigate('/provider')}
-          cta="Open Provider Console"
         />
         <FeatureCard
           icon={Upload}
           title="Run AI & compute jobs"
-          desc="Upload your input files. Pick a capability type (AI inference, CPU compute, video transcode). We match you to the best available node automatically."
-          color="#2563EB"
+          desc="Upload input files. Pick a capability type. The mesh scores and matches you to the best available node automatically."
+          cta="Requester Studio"
+          bg={BLACK}
+          fg={WHITE}
+          iconColor={LIME}
           onClick={() => navigate('/request')}
-          cta="Open Requester Studio"
         />
         <FeatureCard
           icon={Network}
           title="Watch the mesh live"
-          desc="See all online nodes, what capabilities they're offering, and which jobs are running right now. Full job history with match explanations."
-          color="#16A34A"
+          desc="All online nodes, live capabilities, running jobs. Full job history with match scores and explanations."
+          cta="Network Mesh"
+          bg={WHITE}
+          fg={BLACK}
+          iconColor={BLACK}
           onClick={() => navigate('/network')}
-          cta="Open Network Mesh"
         />
       </div>
 
-      {/* How it works + Security */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div
-          className="rounded-2xl p-6"
-          style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-        >
-          <div className="flex items-center gap-2 mb-5">
-            <Zap size={16} style={{ color: 'var(--pm-run)' }} />
-            <span className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>How it works</span>
+      {/* ── How it works + Security ────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+
+        {/* How it works */}
+        <div className="neo-card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ background: BLACK, borderRadius: '2px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Zap size={13} style={{ color: LIME }} />
+            </div>
+            <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '15px' }}>How it works</span>
           </div>
-          <div className="flex flex-col gap-4">
-            <Step n={1} title="Provider publishes a capability" desc="Picks a type (AI inference, CPU compute…), sets limits, and goes live on the mesh." />
-            <Step n={2} title="Requester submits a job" desc="Uploads input files, selects capability type. The mesh automatically scores and matches to the best node." />
-            <Step n={3} title="Provider reviews and approves" desc="A 30-second approval window. The provider sees exactly what will run — requester, input count, limits." />
-            <Step n={4} title="Job runs, results returned" desc="Sandboxed container runs, streams logs. Results arrive with inference times and sandbox audit trail." />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {[
+              ['Provider publishes a capability', 'Picks a type, sets limits, goes live on the mesh.'],
+              ['Requester submits a job', 'Uploads files, picks a type. Mesh scores and auto-matches.'],
+              ['Provider reviews and approves', '30-second window. Sees requester, input count, limits.'],
+              ['Job runs, results returned', 'Sandboxed container streams logs. Results arrive with audit trail.'],
+            ].map(([title, desc], i) => (
+              <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '22px', height: '22px', flexShrink: 0,
+                  background: LIME, border: `2px solid ${BLACK}`, borderRadius: '2px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'JetBrains Mono', fontWeight: 700, fontSize: '11px', color: BLACK,
+                }}>
+                  {i + 1}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '2px', color: BLACK }}>{title}</div>
+                  <div style={{ fontSize: '12px', color: '#666', lineHeight: 1.5 }}>{desc}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div
-          className="rounded-2xl p-6"
-          style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-        >
-          <div className="flex items-center gap-2 mb-5">
-            <Lock size={16} style={{ color: 'var(--pm-ok)' }} />
-            <span className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>Security model</span>
+        {/* Security model */}
+        <div className="neo-card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ background: GREEN, borderRadius: '2px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${BLACK}` }}>
+              <Lock size={13} style={{ color: BLACK }} />
+            </div>
+            <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '15px' }}>Security model</span>
           </div>
-          <div className="flex flex-col gap-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
             {[
-              ['Network disabled', 'Every container runs with no internet access — code cannot phone home or exfiltrate data.'],
-              ['No host filesystem', 'Jobs get a tmpfs scratch space only. Your actual files are never touched.'],
-              ['Workspace destroyed', 'The moment a job ends, the workspace is wiped. Nothing persists on the provider machine.'],
-              ['Provider approves every job', 'Nothing runs without an explicit approval click. You see who is asking and what will run.'],
-              ['Kill switch', 'Providers can revoke a capability instantly, mid-job if needed. Full emergency panic stop.'],
+              ['Network disabled',            'Containers run with no internet access — code cannot phone home or exfiltrate data.'],
+              ['No host filesystem',          'Jobs get an ephemeral tmpfs scratch space only. Your files are never touched.'],
+              ['Workspace destroyed',         'The moment a job ends, workspace is wiped from the provider machine.'],
+              ['Provider approves every job', 'Nothing runs without an explicit approval click. Full visibility on who and what.'],
+              ['Kill switch',                 'Revoke a capability instantly, mid-job if needed. Full emergency panic stop.'],
             ].map(([title, desc]) => (
-              <div key={title} className="flex gap-3">
-                <div className="mt-1 w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#16A34A20' }}>
-                  <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#16A34A' }} />
+              <div key={title} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '18px', height: '18px', flexShrink: 0,
+                  background: GREEN, border: `2px solid ${BLACK}`, borderRadius: '2px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '10px', fontWeight: 900, color: BLACK, marginTop: '1px',
+                }}>
+                  ✓
                 </div>
-                <div>
-                  <span className="text-13 font-medium" style={{ color: 'var(--pm-text)' }}>{title} — </span>
-                  <span className="text-13" style={{ color: 'var(--pm-muted)' }}>{desc}</span>
+                <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                  <span style={{ fontWeight: 600, color: BLACK }}>{title}</span>
+                  <span style={{ color: '#555' }}> — {desc}</span>
                 </div>
               </div>
             ))}
@@ -213,17 +283,25 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* Who is this for */}
-      <div
-        className="rounded-2xl p-6 flex items-center gap-8"
-        style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-      >
-        <Users size={28} style={{ color: 'var(--pm-faint)', flexShrink: 0 }} />
-        <div className="flex-1">
-          <div className="text-14 font-semibold mb-1" style={{ color: 'var(--pm-text)' }}>Who is this for?</div>
-          <div className="text-13" style={{ color: 'var(--pm-muted)', lineHeight: 1.7 }}>
-            <strong style={{ color: 'var(--pm-text)' }}>Providers</strong> — researchers, students, or anyone with a powerful laptop or workstation sitting idle.
-            {' '}<strong style={{ color: 'var(--pm-text)' }}>Requesters</strong> — developers who need occasional bursts of AI inference or compute without paying for a cloud GPU.
+      {/* ── Who is this for ────────────────────────────────── */}
+      <div style={{
+        background: BLACK,
+        border: `2.5px solid ${BLACK}`,
+        boxShadow: `4px 4px 0 ${LIME}`,
+        borderRadius: '4px',
+        padding: '24px 32px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '28px',
+      }}>
+        <Users size={28} style={{ color: LIME, flexShrink: 0 }} />
+        <div>
+          <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '15px', color: WHITE, marginBottom: '6px' }}>
+            Who is this for?
+          </div>
+          <div style={{ fontSize: '13px', color: '#AAAAAA', lineHeight: 1.7 }}>
+            <strong style={{ color: LIME }}>Providers</strong> — researchers, students, or anyone with a powerful laptop or workstation sitting idle.{' '}
+            <strong style={{ color: LIME }}>Requesters</strong> — developers who need occasional bursts of AI inference or compute without paying for a cloud GPU.{' '}
             No accounts, no billing setup. Just peer machines talking directly.
           </div>
         </div>

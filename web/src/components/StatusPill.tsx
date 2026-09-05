@@ -1,18 +1,17 @@
-import { clsx } from 'clsx';
 import type { JobStatus } from '../api/types';
 
-const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg: string }> = {
-  queued:             { label: 'Queued',           color: 'var(--pm-muted)', bg: 'var(--pm-raised)' },
-  matching:           { label: 'Matching',         color: 'var(--pm-run)',   bg: 'color-mix(in srgb, var(--pm-run) 15%, transparent)' },
-  matched:            { label: 'Matched',          color: 'var(--pm-run)',   bg: 'color-mix(in srgb, var(--pm-run) 15%, transparent)' },
-  awaiting_approval:  { label: 'Needs approval',  color: 'var(--pm-warn)',  bg: 'color-mix(in srgb, var(--pm-warn) 15%, transparent)' },
-  approved:           { label: 'Approved',         color: 'var(--pm-ok)',    bg: 'color-mix(in srgb, var(--pm-ok) 15%, transparent)' },
-  running:            { label: 'Running',          color: 'var(--pm-run)',   bg: 'color-mix(in srgb, var(--pm-run) 15%, transparent)' },
-  completed:          { label: 'Completed',        color: 'var(--pm-ok)',    bg: 'color-mix(in srgb, var(--pm-ok) 15%, transparent)' },
-  failed:             { label: 'Failed',           color: 'var(--pm-stop)',  bg: 'color-mix(in srgb, var(--pm-stop) 15%, transparent)' },
-  rejected:           { label: 'Rejected',         color: 'var(--pm-stop)',  bg: 'color-mix(in srgb, var(--pm-stop) 15%, transparent)' },
-  cancelled:          { label: 'Cancelled',        color: 'var(--pm-faint)', bg: 'var(--pm-raised)' },
-  no_provider:        { label: 'No provider',      color: 'var(--pm-warn)',  bg: 'color-mix(in srgb, var(--pm-warn) 15%, transparent)' },
+const STATUS_CONFIG: Record<JobStatus, { label: string; bg: string; color: string }> = {
+  queued:            { label: 'Queued',         bg: '#E5E5E0', color: '#0D0D0D' },
+  matching:          { label: 'Matching',        bg: '#0057FF', color: '#FFFFFF' },
+  matched:           { label: 'Matched',         bg: '#0057FF', color: '#FFFFFF' },
+  awaiting_approval: { label: 'Needs approval',  bg: '#D4FF00', color: '#0D0D0D' },
+  approved:          { label: 'Approved',        bg: '#00E676', color: '#0D0D0D' },
+  running:           { label: 'Running',         bg: '#0057FF', color: '#FFFFFF' },
+  completed:         { label: 'Completed',       bg: '#00E676', color: '#0D0D0D' },
+  failed:            { label: 'Failed',          bg: '#FF2424', color: '#FFFFFF' },
+  rejected:          { label: 'Rejected',        bg: '#FF2424', color: '#FFFFFF' },
+  cancelled:         { label: 'Cancelled',       bg: '#E5E5E0', color: '#888888' },
+  no_provider:       { label: 'No provider',     bg: '#FF8C00', color: '#FFFFFF' },
 };
 
 interface Props {
@@ -24,8 +23,21 @@ export default function StatusPill({ status, className }: Props) {
   const cfg = STATUS_CONFIG[status];
   return (
     <span
-      className={clsx('inline-flex items-center px-2 py-0.5 rounded-pill text-11 font-ui font-medium', className)}
-      style={{ color: cfg.color, background: cfg.bg }}
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 8px',
+        borderRadius: '9999px',
+        fontSize: '11px',
+        fontFamily: 'JetBrains Mono',
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+        background: cfg.bg,
+        color: cfg.color,
+        border: '1.5px solid #0D0D0D',
+        whiteSpace: 'nowrap',
+      }}
     >
       {cfg.label}
     </span>
