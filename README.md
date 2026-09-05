@@ -33,8 +33,11 @@ The coordinator is centralized for the MVP. Compute execution is distributed to 
 - Durable deadlines that expire stalled queue, approval, agent-start, and execution states with explicit error codes.
 - Provider approval/rejection, kill switch, explicit resume, and requester cancellation.
 - Authenticated Server-Sent Events with disconnect cleanup and REST replay fallback.
+- Bounded API shutdown that drains ordinary requests and force-closes lingering streams after a grace period.
 - Provider heartbeat, stale-provider exclusion, progress, completion, failure, and control polling.
+- Provider results are restricted to canonical base64 and the generated rect-only SVG grammar before persistence.
 - Execution-time heartbeats plus shutdown propagation that terminates the active runner and cleans its workspace.
+- Bounded parallel dispatch that honors both provider capability capacity and the agent's local safety ceiling.
 - Docker runner definition with no network, read-only root filesystem, dropped capabilities, PID/CPU/RAM limits, and `no-new-privileges`.
 - Explicit unsafe local runner for development only.
 
@@ -81,6 +84,8 @@ The first authenticated heartbeat changes the device to `ONLINE` and records a s
 RUNNER_MODE=local
 ALLOW_UNSAFE_LOCAL_RUNNER=true
 ```
+
+`AGENT_MAX_PARALLEL_JOBS` is independently bounded from 1 to 4. Actual concurrency is the lower of this local ceiling and the published capability's `maxConcurrentJobs`.
 
 ## Verification
 

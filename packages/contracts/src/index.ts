@@ -61,6 +61,11 @@ export const HARDWARE_SNAPSHOT_LIMITS = {
   MAX_NODE_VERSION_LENGTH: 40
 } as const;
 
+export const CAPABILITY_POLICY_LIMITS = {
+  MIN_CONCURRENT_JOBS: 1,
+  MAX_CONCURRENT_JOBS: 4
+} as const;
+
 export type MandelbrotPalette = "OCEAN" | "EMBER" | "MONO";
 
 export interface MandelbrotParameters {
@@ -284,7 +289,13 @@ export function parseCapabilityCreateInput(input: unknown): ValidationResult<Cap
         MANDELBROT_LIMITS.MAX_ITERATIONS
       ),
       maxRuntimeMs: readInteger(policy, "maxRuntimeMs", issues, 1_000, 60_000),
-      maxConcurrentJobs: readInteger(policy, "maxConcurrentJobs", issues, 1, 4),
+      maxConcurrentJobs: readInteger(
+        policy,
+        "maxConcurrentJobs",
+        issues,
+        CAPABILITY_POLICY_LIMITS.MIN_CONCURRENT_JOBS,
+        CAPABILITY_POLICY_LIMITS.MAX_CONCURRENT_JOBS
+      ),
       expiresAt
     }
   });

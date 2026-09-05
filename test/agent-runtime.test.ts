@@ -3,6 +3,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import type {
   AgentHeartbeatInput,
   JobCompletionInput,
@@ -11,7 +12,12 @@ import type {
 } from "../packages/contracts/src/index.js";
 import type { ClaimedJob } from "../apps/agent/src/api-client.js";
 import type { AgentConfig } from "../apps/agent/src/config.js";
-import { executeClaimedJob, type ProviderAgentClient } from "../apps/agent/src/runtime.js";
+import {
+  executeClaimedJob,
+  runProviderAgent,
+  type ClaimedJobExecutor,
+  type ProviderAgentClient
+} from "../apps/agent/src/runtime.js";
 
 const TEST_HARDWARE: AgentHeartbeatInput["hardware"] = {
   architecture: "X64",
@@ -37,15 +43,24 @@ const TEST_INPUT: JobCreateInput = {
 };
 
 class TestAgentClient implements ProviderAgentClient {
+  readonly #jobs: ClaimedJob[];
   heartbeatCount = 0;
   controlPollCount = 0;
   completedResults: JobCompletionInput[] = [];
   failures: Array<{ code: string; message: string }> = [];
 
+  constructor(jobs: readonly ClaimedJob[] = []) {
+    this.#jobs = [...jobs];
+  }
+
   heartbeat(hardware: AgentHeartbeatInput["hardware"]): Promise<void> {
     assert.equal(hardware.cpuModel, TEST_HARDWARE.cpuModel);
     this.heartbeatCount += 1;
     return Promise.resolve();
+  }
+
+  claim(): Promise<ClaimedJob | null> {
+    return Promise.resolve(this.#jobs.shift() ?? null);
   }
 
   control(jobId: string): Promise<{ status: JobStatus; shouldStop: boolean }> {
@@ -82,6 +97,7 @@ function testConfig(workRoot: string): AgentConfig {
     pollMs: 10,
     controlPollMs: 5,
     heartbeatMs: 5,
+    maxParallelJobs: 4,
     runner: {
       mode: "local",
       allowUnsafeLocalRunner: true,
@@ -96,7 +112,7 @@ function claimedJob(id: string): ClaimedJob {
   return { id, status: "RUNNING", input: TEST_INPUT };
 }
 
-void test("provider agent keeps heartbeats alive throughout a running workload", async (context) => {
+void test("provider agent executes a claimed workload with control polling", async (context) => {
   const workRoot = await mkdtemp(join(tmpdir(), "powermesh-agent-heartbeat-"));
   context.after(() => rm(workRoot, { recursive: true, force: true }));
   const client = new TestAgentClient();
@@ -105,11 +121,9 @@ void test("provider agent keeps heartbeats alive throughout a running workload",
     client,
     testConfig(workRoot),
     claimedJob("heartbeat-job"),
-    TEST_HARDWARE,
     new AbortController().signal
   );
 
-  assert.ok(client.heartbeatCount >= 1, "long-running execution must not stop agent heartbeats");
   assert.ok(client.controlPollCount >= 1);
   assert.equal(client.completedResults.length, 1);
   assert.equal(client.failures.length, 0);
@@ -123,7 +137,7 @@ void test("provider shutdown aborts the workload without reporting a false runne
   const abortTimer = setTimeout(() => shutdown.abort(), 10);
 
   try {
-    await executeClaimedJob(client, testConfig(workRoot), claimedJob("shutdown-job"), TEST_HARDWARE, shutdown.signal);
+    await executeClaimedJob(client, testConfig(workRoot), claimedJob("shutdown-job"), shutdown.signal);
   } finally {
     clearTimeout(abortTimer);
   }
@@ -132,4 +146,35 @@ void test("provider shutdown aborts the workload without reporting a false runne
   assert.equal(client.completedResults.length, 0);
   assert.equal(client.failures.length, 0);
   assert.deepEqual(await readdir(workRoot), [], "aborted runner workspace must be cleaned up");
+});
+
+void test("provider dispatcher honors its parallel limit while maintaining one heartbeat loop", async () => {
+  const jobs = [claimedJob("parallel-1"), claimedJob("parallel-2"), claimedJob("parallel-3")];
+  const client = new TestAgentClient(jobs);
+  const config = testConfig(join(tmpdir(), "powermesh-unused-dispatch-root"));
+  config.maxParallelJobs = 2;
+  config.pollMs = 2;
+  const shutdown = new AbortController();
+  const completedJobIds: string[] = [];
+  let activeJobs = 0;
+  let peakActiveJobs = 0;
+
+  const executor: ClaimedJobExecutor = async (_client, _config, job) => {
+    activeJobs += 1;
+    peakActiveJobs = Math.max(peakActiveJobs, activeJobs);
+    try {
+      await delay(20);
+      completedJobIds.push(job.id);
+      if (completedJobIds.length === jobs.length) shutdown.abort();
+    } finally {
+      activeJobs -= 1;
+    }
+  };
+
+  await runProviderAgent(client, config, TEST_HARDWARE, shutdown.signal, executor);
+
+  assert.equal(peakActiveJobs, 2);
+  assert.deepEqual(completedJobIds.sort(), jobs.map((job) => job.id).sort());
+  assert.ok(client.heartbeatCount >= 1);
+  assert.equal(activeJobs, 0);
 });
