@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store';
 import StatusPill from '../components/StatusPill';
-import { Cpu, Wifi, WifiOff, Clock } from 'lucide-react';
+import { Cpu, WifiOff, Clock } from 'lucide-react';
 
 function StatCard({ value, label, color }: { value: number | string; label: string; color?: string }) {
   return (

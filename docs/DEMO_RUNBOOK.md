@@ -32,7 +32,10 @@ The backup deliberately uses `LOCAL_UNSAFE_BACKUP_ONLY`. It proves orchestration
 
 - No provider match: confirm the agent heartbeat is fresh, the device is not paused, and the capability has not expired.
 - Agent cannot authenticate: register a new device and copy the one-time token again.
-- Job remains approved: confirm the agent process is running and polling the same API base URL.
+- Job remains approved: confirm the agent heartbeat is fresh and its capability is active, unexpired, within policy, and has free execution capacity.
 - Job is `EXPIRED`: show its timeout error, fix provider availability if needed, and submit a new job. Expired execution is never resumed silently.
 - Stream disconnects: replay `/events?after=<lastSequence>` and reopen the authenticated fetch stream.
+- API shutdown: active requests receive a five-second grace period; lingering SSE connections are then closed and must reconnect after restart.
+- Agent shutdown: `SIGINT`/`SIGTERM` aborts the active runner; restart the agent, then submit a new job after the old job reaches a terminal state.
+- Capacity mismatch: confirm `AGENT_MAX_PARALLEL_JOBS` is at least the capability's intended concurrency; the lower limit always wins.
 - Docker is unavailable: use the backup command and disclose `LOCAL_UNSAFE_BACKUP_ONLY`.

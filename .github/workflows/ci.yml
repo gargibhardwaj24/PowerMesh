@@ -26,3 +26,11 @@ jobs:
 
       - name: Lint, typecheck, test and build
         run: npm run check
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck and build frontend
+        working-directory: web
+        run: npm run build

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   parseAgentHeartbeatInput,
   parseCapabilityCreateInput,
+  parseCapabilityStatusUpdateInput,
   parseDemoSessionInput,
   parseDeviceCreateInput,
   parseJobCompletionInput,
@@ -10,6 +11,8 @@ import {
   parseJobFailureInput,
   parseJobProgressInput,
   TERMINAL_JOB_STATUSES,
+  type JobCompletionInput,
+  type JobCreateInput,
   type UserRole,
   type ValidationResult
 } from "../../../packages/contracts/src/index.js";
@@ -29,6 +32,11 @@ export interface ApiApplication {
 
 const SSE_HEARTBEAT_MS = 15_000;
 const MAX_EVENT_REPLAY = 1_000;
+const STANDARD_BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const SVG_CLOSING_TAG = "</svg>";
+const SVG_BACKGROUND_RECT = '<rect width="100%" height="100%" fill="#07111f"/>';
+const SVG_RECT_TAG_PATTERN =
+  /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="(?:#[0-9a-f]{6}|rgb\((\d{1,3}) (\d{1,3}) (\d{1,3})\))"\/>/gy;
 
 function validated<T>(result: ValidationResult<T>): T {
   if (!result.ok) throw new AppError(422, "VALIDATION_FAILED", "Request validation failed", result.issues);
@@ -87,7 +95,7 @@ function configureHeaders(request: IncomingMessage, response: ServerResponse, co
   }
   response.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
   response.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-agent-token, x-device-id");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
   response.setHeader("Vary", "Origin");
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("X-Frame-Options", "DENY");
@@ -95,24 +103,68 @@ function configureHeaders(request: IncomingMessage, response: ServerResponse, co
   response.setHeader("Cache-Control", "no-store");
 }
 
-function validateSvgCompletion(result: ReturnType<typeof parseJobCompletionInput> extends ValidationResult<infer T> ? T : never): void {
+function validateMandelbrotSvg(svg: string, input: JobCreateInput): void {
+  const { width, height } = input.parameters;
+  const root = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+  if (!svg.startsWith(root) || !svg.endsWith(SVG_CLOSING_TAG)) {
+    throw new AppError(422, "UNSAFE_RESULT", "Result does not match the approved Mandelbrot SVG envelope");
+  }
+
+  const body = svg.slice(root.length, -SVG_CLOSING_TAG.length);
+  if (!body.startsWith(SVG_BACKGROUND_RECT)) {
+    throw new AppError(422, "UNSAFE_RESULT", "Result is missing the approved SVG background");
+  }
+
+  let offset = SVG_BACKGROUND_RECT.length;
+  let renderedRectangles = 0;
+  SVG_RECT_TAG_PATTERN.lastIndex = offset;
+  while (offset < body.length) {
+    SVG_RECT_TAG_PATTERN.lastIndex = offset;
+    const match = SVG_RECT_TAG_PATTERN.exec(body);
+    if (match === null || match.index !== offset) {
+      throw new AppError(422, "UNSAFE_RESULT", "Result contains SVG content outside the approved rect grammar");
+    }
+
+    const [x, y, rectWidth, rectHeight] = match.slice(1, 5).map(Number);
+    const rgbChannels = match.slice(5, 8).filter((channel): channel is string => channel !== undefined).map(Number);
+    if (
+      x === undefined ||
+      y === undefined ||
+      rectWidth === undefined ||
+      rectHeight === undefined ||
+      x >= width ||
+      y >= height ||
+      rectWidth < 1 ||
+      x + rectWidth > width ||
+      rectHeight < 1 ||
+      rectHeight > height ||
+      rgbChannels.some((channel) => channel > 255)
+    ) {
+      throw new AppError(422, "INVALID_RESULT", "Result contains an out-of-bounds SVG rectangle");
+    }
+    offset = SVG_RECT_TAG_PATTERN.lastIndex;
+    renderedRectangles += 1;
+  }
+
+  if (renderedRectangles === 0) {
+    throw new AppError(422, "INVALID_RESULT", "Result does not contain rendered Mandelbrot pixels");
+  }
+}
+
+function validateSvgCompletion(result: JobCompletionInput, input: JobCreateInput): void {
   const encoded = result.result.dataBase64;
-  if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded) && !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+  if (!STANDARD_BASE64_PATTERN.test(encoded)) {
     throw new AppError(422, "INVALID_RESULT", "Result payload is not valid base64");
   }
   const decoded = Buffer.from(encoded, "base64");
+  if (decoded.toString("base64") !== encoded) {
+    throw new AppError(422, "INVALID_RESULT", "Result payload is not canonical base64");
+  }
   if (decoded.byteLength !== result.metrics.outputBytes) {
     throw new AppError(422, "INVALID_RESULT", "Result byte count does not match metrics");
   }
   const svg = decoded.toString("utf8");
-  if (
-    !svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"') ||
-    !svg.endsWith("</svg>") ||
-    /<(?:script|foreignObject|image|a)\b/i.test(svg) ||
-    /\son[a-z]+\s*=/i.test(svg)
-  ) {
-    throw new AppError(422, "UNSAFE_RESULT", "Result is not an approved PowerMesh SVG artifact");
-  }
+  validateMandelbrotSvg(svg, input);
 }
 
 function openJobStream(
@@ -272,6 +324,21 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
           return;
         }
 
+        const capabilityMatch = /^\/api\/capabilities\/([^/]+)$/.exec(url.pathname);
+        if (method === "PATCH" && capabilityMatch?.[1] !== undefined) {
+          const claims = requireSession(request, config, "PROVIDER");
+          const input = validated(parseCapabilityStatusUpdateInput(await readJsonBody(request, config.maxBodyBytes)));
+          sendData(response, requestId, 200, store.updateCapabilityStatus(claims.sub, capabilityMatch[1], input.status));
+          return;
+        }
+
+        const revokeCapabilityMatch = /^\/api\/capabilities\/([^/]+)\/revoke$/.exec(url.pathname);
+        if (method === "POST" && revokeCapabilityMatch?.[1] !== undefined) {
+          const claims = requireSession(request, config, "PROVIDER");
+          sendData(response, requestId, 200, store.revokeCapability(claims.sub, revokeCapabilityMatch[1]));
+          return;
+        }
+
         if (method === "GET" && url.pathname === "/api/network/summary") {
           requireSession(request, config);
           sendData(response, requestId, 200, store.getNetworkSummary(config.heartbeatStaleMs));
@@ -367,7 +434,9 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
 
         if (method === "POST" && url.pathname === "/api/agent/jobs/claim") {
           const agent = authenticateAgent(request, store);
-          sendData(response, requestId, 200, { job: store.claimApprovedJob(agent.deviceId) });
+          sendData(response, requestId, 200, {
+            job: store.claimApprovedJob(agent.deviceId, config.heartbeatStaleMs)
+          });
           return;
         }
 
@@ -399,7 +468,7 @@ export function createApiApplication(config: ApiConfig): ApiApplication {
           const job = requireJob(store, completeMatch[1]);
           assertAgentJob(job, agent.deviceId);
           const input = validated(parseJobCompletionInput(await readJsonBody(request, config.maxBodyBytes)));
-          validateSvgCompletion(input);
+          validateSvgCompletion(input, job.input);
           sendData(
             response,
             requestId,

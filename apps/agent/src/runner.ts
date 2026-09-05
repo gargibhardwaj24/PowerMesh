@@ -25,6 +25,10 @@ function execute(
   signal: AbortSignal
 ): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error("Workload was stopped by control signal"));
+      return;
+    }
     const child = spawn(command, args, { shell: false, windowsHide: true });
     let stdout = "";
     let stderr = "";

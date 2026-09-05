@@ -7,6 +7,7 @@ import {
   parseJobCreateInput,
   TERMINAL_JOB_STATUSES,
   type AgentHeartbeatInput,
+  type CapabilityControlStatus,
   type CapabilityCreateInput,
   type CapabilityStatus,
   type CapabilityType,
@@ -24,6 +25,7 @@ import { AppError } from "../../../packages/core/src/errors.js";
 import { assertTransition } from "../../../packages/core/src/state-machine.js";
 import {
   calculateReliabilityScore,
+  selectBestProvider,
   type MatchCandidate,
   type MatchResult
 } from "../../../packages/core/src/matcher.js";
@@ -260,10 +262,15 @@ const DEVICE_WITH_HARDWARE_SELECT = `
   FROM devices d
   LEFT JOIN device_telemetry t ON t.device_id = d.id`;
 
+const PROVIDER_FAILURE_PREDICATE = `(
+  j.status = 'FAILED' OR
+  (j.status = 'EXPIRED' AND j.error_code IN ('APPROVAL_TIMEOUT', 'AGENT_START_TIMEOUT', 'EXECUTION_TIMEOUT'))
+)`;
+
 const CAPABILITY_WITH_RELIABILITY_SELECT = `
   SELECT c.*,
     (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND j.status = 'COMPLETED') AS completed_jobs,
-    (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND j.status = 'FAILED') AS failed_jobs
+    (SELECT COUNT(*) FROM jobs j WHERE j.device_id = c.device_id AND ${PROVIDER_FAILURE_PREDICATE}) AS failed_jobs
   FROM capabilities c`;
 
 function expectString(row: Record<string, SQLOutputValue>, key: string): string {
@@ -686,6 +693,66 @@ export class SqliteStore {
     }
   }
 
+  updateCapabilityStatus(
+    providerId: string,
+    capabilityId: string,
+    nextStatus: CapabilityControlStatus,
+    now = Date.now()
+  ): CapabilityRecord {
+    try {
+      return this.#transaction(() => {
+        const capability = this.#requireCapability(capabilityId);
+        if (capability.providerId !== providerId) {
+          throw new AppError(403, "FORBIDDEN", "You do not own this capability");
+        }
+        if (capability.status === "REVOKED") {
+          throw new AppError(409, "CAPABILITY_REVOKED", "A revoked capability must be published again with a full policy");
+        }
+        if (nextStatus === "ACTIVE") {
+          if (Date.parse(capability.expiresAt) <= now) {
+            throw new AppError(409, "CAPABILITY_EXPIRED", "An expired capability must be published again");
+          }
+          const device = this.getDevice(capability.deviceId);
+          if (device === null) throw new AppError(404, "DEVICE_NOT_FOUND", "Provider device was not found");
+          if (device.status === "PAUSED") {
+            throw new AppError(409, "DEVICE_PAUSED", "Resume the provider device before activating its capability");
+          }
+        }
+        if (capability.status === nextStatus) return capability;
+        const updatedAt = new Date(now).toISOString();
+        this.#database.prepare("UPDATE capabilities SET status = ?, updated_at = ? WHERE id = ?").run(
+          nextStatus,
+          updatedAt,
+          capabilityId
+        );
+        return this.#requireCapability(capabilityId);
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new Error("Unable to update provider capability status", { cause: error });
+    }
+  }
+
+  revokeCapability(providerId: string, capabilityId: string): CapabilityRecord {
+    try {
+      return this.#transaction(() => {
+        const capability = this.#requireCapability(capabilityId);
+        if (capability.providerId !== providerId) {
+          throw new AppError(403, "FORBIDDEN", "You do not own this capability");
+        }
+        if (capability.status === "REVOKED") return capability;
+        const updatedAt = new Date().toISOString();
+        this.#database
+          .prepare("UPDATE capabilities SET status = 'REVOKED', updated_at = ? WHERE id = ?")
+          .run(updatedAt, capabilityId);
+        return this.#requireCapability(capabilityId);
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new Error("Unable to revoke provider capability", { cause: error });
+    }
+  }
+
   getNetworkSummary(heartbeatStaleMs: number, now = Date.now()): {
     onlineDevices: number;
     activeCapabilities: number;
@@ -723,7 +790,7 @@ export class SqliteStore {
           `SELECT c.*, d.status AS device_status, d.last_heartbeat_at,
             (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status IN ('APPROVED', 'RUNNING')) AS current_jobs,
             (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status = 'COMPLETED') AS completed_jobs,
-            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND j.status = 'FAILED') AS failed_jobs
+            (SELECT COUNT(*) FROM jobs j WHERE j.device_id = d.id AND ${PROVIDER_FAILURE_PREDICATE}) AS failed_jobs
           FROM capabilities c
           JOIN devices d ON d.id = c.device_id`
         )
@@ -937,22 +1004,45 @@ export class SqliteStore {
     }
   }
 
-  claimApprovedJob(deviceId: string): JobRecord | null {
+  claimApprovedJob(deviceId: string, heartbeatStaleMs: number, now = Date.now()): JobRecord | null {
     try {
       return this.#transaction(() => {
-        const row = this.#database
-          .prepare("SELECT * FROM jobs WHERE device_id = ? AND status = 'APPROVED' ORDER BY created_at LIMIT 1")
-          .get(deviceId);
-        if (row === undefined) return null;
-        const job = mapJob(row);
-        assertTransition(job.status, "RUNNING");
-        const now = new Date().toISOString();
-        const updated = this.#database
-          .prepare("UPDATE jobs SET status = 'RUNNING', started_at = ?, updated_at = ? WHERE id = ? AND status = 'APPROVED'")
-          .run(now, now, job.id);
-        if (updated.changes !== 1) return null;
-        this.#appendEvent(job.id, "STATUS_CHANGED", "RUNNING", "Provider agent claimed the job", null, now);
-        return this.#requireJob(job.id);
+        const approvedJobs = this.#database
+          .prepare("SELECT * FROM jobs WHERE device_id = ? AND status = 'APPROVED' ORDER BY created_at, id")
+          .all(deviceId)
+          .map(mapJob);
+        if (approvedJobs.length === 0) return null;
+
+        const candidates = this.findMatchCandidates(heartbeatStaleMs, now);
+        const runningRow = this.#database
+          .prepare("SELECT COUNT(*) AS count FROM jobs WHERE device_id = ? AND status = 'RUNNING'")
+          .get(deviceId)!;
+        const runningJobs = expectNumber(runningRow, "count");
+
+        for (const job of approvedJobs) {
+          const candidate = candidates.find(
+            (entry) =>
+              entry.capabilityId === job.capabilityId &&
+              entry.providerId === job.providerId &&
+              entry.deviceId === job.deviceId
+          );
+          if (candidate === undefined) continue;
+          const eligible = selectBestProvider(job.input, [{ ...candidate, currentJobs: runningJobs }], now);
+          if (eligible === null) continue;
+
+          assertTransition(job.status, "RUNNING");
+          const claimedAt = new Date(now).toISOString();
+          const updated = this.#database
+            .prepare(
+              "UPDATE jobs SET status = 'RUNNING', started_at = ?, updated_at = ? WHERE id = ? AND status = 'APPROVED'"
+            )
+            .run(claimedAt, claimedAt, job.id);
+          if (updated.changes !== 1) continue;
+          this.#appendEvent(job.id, "STATUS_CHANGED", "RUNNING", "Provider agent claimed the job", null, claimedAt);
+          return this.#requireJob(job.id);
+        }
+
+        return null;
       });
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -1003,6 +1093,12 @@ export class SqliteStore {
     const row = this.#database.prepare("SELECT * FROM jobs WHERE id = ?").get(jobId);
     if (row === undefined) throw new AppError(404, "JOB_NOT_FOUND", "Job was not found");
     return mapJob(row);
+  }
+
+  #requireCapability(capabilityId: string): CapabilityRecord {
+    const row = this.#database.prepare(`${CAPABILITY_WITH_RELIABILITY_SELECT} WHERE c.id = ?`).get(capabilityId);
+    if (row === undefined) throw new AppError(404, "CAPABILITY_NOT_FOUND", "Provider capability was not found");
+    return mapCapability(row);
   }
 
   #appendEvent(

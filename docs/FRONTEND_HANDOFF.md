@@ -17,7 +17,8 @@ The backend contract is stable enough for the first integration pass.
 - `device.hardware` is `null` before the first heartbeat. Handle that as "Agent not connected", not as a loading loop.
 - Label the hardware snapshot as self-reported compatibility data, not hardware attestation.
 - Surface `executionIsolation`. `LOCAL_UNSAFE` must show an explicit development-only warning; only `DOCKER` supports the sandbox claim.
-- Capability cards may show `reliabilityScore`, `completedJobs`, and `failedJobs`. Treat the score as execution history, not identity verification.
+- Capability cards may show `reliabilityScore`, `completedJobs`, and `failedJobs`. Failed outcomes include provider-side timeouts, but not unmatched queue expiry. Treat the score as execution history, not identity verification.
+- Capability pause/resume uses `PATCH /api/capabilities/:id` with an `ACTIVE` or `PAUSED` status. Revocation uses the separate confirmation-only `/revoke` action and requires republishing a complete policy to undo.
 
 ## Required UI states
 

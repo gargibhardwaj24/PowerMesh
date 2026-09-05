@@ -19,6 +19,9 @@ export type CapabilityType = (typeof CAPABILITY_TYPES)[number];
 export const CAPABILITY_STATUSES = ["ACTIVE", "PAUSED", "REVOKED"] as const;
 export type CapabilityStatus = (typeof CAPABILITY_STATUSES)[number];
 
+export const CAPABILITY_CONTROL_STATUSES = ["ACTIVE", "PAUSED"] as const;
+export type CapabilityControlStatus = (typeof CAPABILITY_CONTROL_STATUSES)[number];
+
 export const JOB_STATUSES = [
   "SUBMITTED",
   "QUEUED",
@@ -59,6 +62,11 @@ export const HARDWARE_SNAPSHOT_LIMITS = {
   MAX_MEMORY_MB: 16_777_216,
   MAX_CPU_MODEL_LENGTH: 200,
   MAX_NODE_VERSION_LENGTH: 40
+} as const;
+
+export const CAPABILITY_POLICY_LIMITS = {
+  MIN_CONCURRENT_JOBS: 1,
+  MAX_CONCURRENT_JOBS: 4
 } as const;
 
 export type MandelbrotPalette = "OCEAN" | "EMBER" | "MONO";
@@ -106,6 +114,10 @@ export interface CapabilityCreateInput {
     maxConcurrentJobs: number;
     expiresAt: string;
   };
+}
+
+export interface CapabilityStatusUpdateInput {
+  status: CapabilityControlStatus;
 }
 
 export interface JobCreateInput {
@@ -284,10 +296,25 @@ export function parseCapabilityCreateInput(input: unknown): ValidationResult<Cap
         MANDELBROT_LIMITS.MAX_ITERATIONS
       ),
       maxRuntimeMs: readInteger(policy, "maxRuntimeMs", issues, 1_000, 60_000),
-      maxConcurrentJobs: readInteger(policy, "maxConcurrentJobs", issues, 1, 4),
+      maxConcurrentJobs: readInteger(
+        policy,
+        "maxConcurrentJobs",
+        issues,
+        CAPABILITY_POLICY_LIMITS.MIN_CONCURRENT_JOBS,
+        CAPABILITY_POLICY_LIMITS.MAX_CONCURRENT_JOBS
+      ),
       expiresAt
     }
   });
+}
+
+export function parseCapabilityStatusUpdateInput(input: unknown): ValidationResult<CapabilityStatusUpdateInput> {
+  if (!isRecord(input)) return { ok: false, issues: ["body must be an object"] };
+  const status = input["status"];
+  if (!isOneOf(status, CAPABILITY_CONTROL_STATUSES)) {
+    return { ok: false, issues: ["status must be ACTIVE or PAUSED"] };
+  }
+  return { ok: true, value: { status } };
 }
 
 export function parseJobCreateInput(input: unknown): ValidationResult<JobCreateInput> {
