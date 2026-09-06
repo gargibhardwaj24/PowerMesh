@@ -45,6 +45,10 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  overflow: hidden;
+}
+
 .font-mono    { font-family: 'JetBrains Mono', monospace; font-feature-settings: "tnum"; }
 .font-display { font-family: 'Syne', sans-serif; font-weight: 800; }
 .font-ui      { font-family: 'Instrument Sans', sans-serif; }
@@ -57,6 +61,11 @@ html, body, #root {
 .pulse-slow { animation: pulse-slow 2s ease-in-out infinite; }
 .pulse-dot  { animation: pulse-dot  2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .pulse-slow, .pulse-dot { animation: none; } }
+
+:focus-visible {
+  outline: 3px solid var(--pm-run);
+  outline-offset: 3px;
+}
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track  { background: var(--pm-void); }

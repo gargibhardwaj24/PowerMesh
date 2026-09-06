@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { useStore } from './store';
 import NavRail from './components/NavRail';
-import ConnectionBanner from './components/ConnectionBanner';
+import ToastViewport from './components/ToastViewport';
 import Landing from './routes/Landing';
 import NetworkDashboard from './routes/NetworkDashboard';
 import ProviderConsole from './routes/ProviderConsole';
@@ -10,6 +11,46 @@ import RequesterConsole from './routes/RequesterConsole';
 import JobDetail from './routes/JobDetail';
 
 const REFRESH_INTERVAL_MS = 2_000;
+const ROUTE_ORDER = ['/', '/network', '/provider', '/request'] as const;
+
+function routeIndex(pathname: string): number {
+  if (pathname.startsWith('/jobs/')) return ROUTE_ORDER.indexOf('/request');
+  const index = ROUTE_ORDER.indexOf(pathname as (typeof ROUTE_ORDER)[number]);
+  return index < 0 ? 0 : index;
+}
+
+function RoutedContent() {
+  const location = useLocation();
+  const previousIndex = useRef(routeIndex(location.pathname));
+  const currentIndex = routeIndex(location.pathname);
+  const direction = currentIndex >= previousIndex.current ? 1 : -1;
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    previousIndex.current = currentIndex;
+  }, [currentIndex]);
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={location.pathname}
+        className="route-frame"
+        initial={reduceMotion ? false : { opacity: 0, x: direction * 12 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: direction * -8 }}
+        transition={{ duration: reduceMotion ? 0 : 0.19, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <Routes location={location}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/network" element={<NetworkDashboard />} />
+          <Route path="/provider" element={<ProviderConsole />} />
+          <Route path="/request" element={<RequesterConsole />} />
+          <Route path="/jobs/:id" element={<JobDetail />} />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
 
 export default function App() {
   const bootstrap = useStore(s => s.bootstrap);
@@ -31,20 +72,14 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="flex h-full">
-        <ConnectionBanner />
+      <div className="app-shell">
         <NavRail />
-        <main className="flex-1 min-w-0 overflow-y-auto">
-          <div className="max-w-[1140px] mx-auto px-8 py-7">
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/network" element={<NetworkDashboard />} />
-              <Route path="/provider" element={<ProviderConsole />} />
-              <Route path="/request" element={<RequesterConsole />} />
-              <Route path="/jobs/:id" element={<JobDetail />} />
-            </Routes>
+        <main className="app-main" id="main-content">
+          <div className="app-canvas">
+            <RoutedContent />
           </div>
         </main>
+        <ToastViewport />
       </div>
     </BrowserRouter>
   );

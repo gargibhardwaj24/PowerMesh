@@ -27,6 +27,14 @@ const REQUESTER_IDENTITY = {
 } as const;
 
 export type ViewingIdentity = 'gargi' | 'kavya';
+export type ToastTone = 'success' | 'error' | 'info' | 'warning';
+
+export interface ToastMessage {
+  id: number;
+  tone: ToastTone;
+  title: string;
+  detail?: string;
+}
 
 interface Sessions {
   provider: DemoSession;
@@ -44,9 +52,13 @@ interface Store {
   viewingAs: ViewingIdentity;
   error: string | null;
   lastRegistration: DeviceRegistration | null;
+  toasts: ToastMessage[];
 
   setViewingAs: (identity: ViewingIdentity) => void;
   clearRegistrationCredentials: () => void;
+  pushToast: (toast: Omit<ToastMessage, 'id'>) => void;
+  dismissToast: (toastId: number) => void;
+  clearError: () => void;
   bootstrap: () => Promise<void>;
   refresh: () => Promise<void>;
   refreshJob: (jobId: string) => Promise<void>;
@@ -71,6 +83,7 @@ const EMPTY_SUMMARY: NetworkSummary = {
   completedJobs: 0,
 };
 const TERMINAL_STATUSES = new Set<JobStatus>(TERMINAL_JOB_STATUSES);
+let nextToastId = 1;
 
 function errorMessage(error: unknown): string {
   if (error instanceof CoordinatorApiError) {
@@ -108,9 +121,17 @@ export const useStore = create<Store>((set, get) => ({
   viewingAs: 'kavya',
   error: null,
   lastRegistration: null,
+  toasts: [],
 
   setViewingAs: (viewingAs) => set({ viewingAs }),
   clearRegistrationCredentials: () => set({ lastRegistration: null }),
+  pushToast: (toast) => set((state) => ({
+    toasts: [...state.toasts, { ...toast, id: nextToastId++ }].slice(-4),
+  })),
+  dismissToast: (toastId) => set((state) => ({
+    toasts: state.toasts.filter((toast) => toast.id !== toastId),
+  })),
+  clearError: () => set({ error: null }),
 
   bootstrap: async () => {
     set({ connection: 'connecting', error: null });
