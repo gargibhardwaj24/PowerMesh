@@ -1,312 +1,123 @@
+import { useMemo } from 'react';
+import { ArrowRight, Monitor, Network, ShieldCheck, Upload, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Monitor, Upload, Network, Lock, Zap, Users } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { TERMINAL_JOB_STATUSES, type JobStatus } from '../../../packages/contracts/src/index';
+import PageHeader from '../components/PageHeader';
+import StatusPill from '../components/StatusPill';
+import { CapacityGraph, JobDistribution, SseActivityGraph } from '../components/TelemetryCharts';
 import { useStore } from '../store';
 
-const LIME  = '#D4FF00';
-const BLACK = '#0D0D0D';
-const WHITE = '#FFFFFF';
-const MUTED = '#888888';
-const GREEN = '#00E676';
+const TERMINAL_STATUSES = new Set<JobStatus>(TERMINAL_JOB_STATUSES);
+const RUNNING_STATUSES = new Set<JobStatus>(['APPROVED', 'RUNNING']);
 
-function StatTile({ value, label }: { value: number; label: string }) {
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '12px 20px',
-      background: LIME,
-      border: `2.5px solid ${BLACK}`,
-      borderRadius: '4px',
-      minWidth: '90px',
-    }}>
-      <div style={{
-        fontFamily: 'JetBrains Mono',
-        fontWeight: 700,
-        fontSize: '1.75rem',
-        color: BLACK,
-        lineHeight: 1,
-        fontVariantNumeric: 'tabular-nums',
-      }}>
-        {value}
-      </div>
-      <div style={{
-        fontFamily: 'JetBrains Mono',
-        fontSize: '10px',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        color: '#454545',
-        marginTop: '5px',
-        textAlign: 'center',
-      }}>
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon: Icon, title, desc, cta, bg, fg, iconColor, onClick,
-}: {
-  icon: typeof Monitor; title: string; desc: string; cta: string;
-  bg: string; fg: string; iconColor: string; onClick: () => void;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: bg,
-        border: `2.5px solid ${BLACK}`,
-        boxShadow: '4px 4px 0 #0D0D0D',
-        borderRadius: '4px',
-        padding: '24px',
-        cursor: 'pointer',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0',
-        transition: 'transform 0.08s ease, box-shadow 0.08s ease',
-      }}
-      onMouseEnter={e => {
-        (e.currentTarget as HTMLElement).style.transform = 'translate(-2px, -2px)';
-        (e.currentTarget as HTMLElement).style.boxShadow = '6px 6px 0 #0D0D0D';
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLElement).style.transform = 'none';
-        (e.currentTarget as HTMLElement).style.boxShadow = '4px 4px 0 #0D0D0D';
-      }}
-    >
-      <Icon size={22} style={{ color: iconColor, marginBottom: '16px', flexShrink: 0 }} />
-      <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '1.05rem', color: fg, marginBottom: '8px', lineHeight: 1.2 }}>
-        {title}
-      </div>
-      <div style={{ fontSize: '13px', color: fg === BLACK ? '#454545' : '#AAAAAA', lineHeight: 1.55, marginBottom: '20px', flexGrow: 1 }}>
-        {desc}
-      </div>
-      <span style={{ fontSize: '12px', fontWeight: 700, color: iconColor, letterSpacing: '0.04em', fontFamily: 'JetBrains Mono' }}>
-        {cta} →
-      </span>
-    </div>
-  );
+function relativeTime(value: string): string {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 1_000));
+  if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`;
+  if (elapsedSeconds < 3_600) return `${Math.floor(elapsedSeconds / 60)}m ago`;
+  return `${Math.floor(elapsedSeconds / 3_600)}h ago`;
 }
 
 export default function Landing() {
   const navigate = useNavigate();
-  const summary  = useStore(s => s.summary);
+  const summary = useStore((state) => state.summary);
+  const connection = useStore((state) => state.connection);
+  const capabilities = useStore(useShallow((state) => Object.values(state.capabilities)));
+  const jobs = useStore(useShallow((state) => Object.values(state.jobs)));
+  const events = useStore(useShallow((state) => state.events));
+  const activeCapabilities = capabilities.filter((capability) => capability.status === 'ACTIVE');
+  const availableSlots = activeCapabilities.reduce((total, capability) => total + capability.maxConcurrentJobs, 0);
+  const usedSlots = jobs.filter((job) => RUNNING_STATUSES.has(job.status)).length;
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => !TERMINAL_STATUSES.has(job.status)).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)),
+    [jobs],
+  );
+  const recentJobs = useMemo(
+    () => [...jobs].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, 6),
+    [jobs],
+  );
 
   return (
-    <div style={{ maxWidth: '860px', margin: '0 auto', paddingBottom: '48px' }}>
-
-      {/* ── Hero — black panel ─────────────────────────────── */}
-      <div style={{
-        background: BLACK,
-        border: `2.5px solid ${BLACK}`,
-        boxShadow: `6px 6px 0 ${LIME}`,
-        borderRadius: '4px',
-        padding: '48px',
-        marginBottom: '20px',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
-        {/* Eyebrow */}
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '20px',
-          padding: '4px 12px',
-          border: `1.5px solid ${LIME}`,
-          borderRadius: '2px',
-        }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: LIME, display: 'inline-block', flexShrink: 0 }} />
-          <span style={{ color: LIME, fontFamily: 'JetBrains Mono', fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-            v1.0 · peer compute layer
-          </span>
-        </div>
-
-        {/* Headline */}
-        <h1 style={{
-          fontFamily: 'Syne',
-          fontWeight: 800,
-          fontSize: '3.25rem',
-          lineHeight: 1.0,
-          letterSpacing: '-0.02em',
-          color: WHITE,
-          marginBottom: '20px',
-          textWrap: 'balance',
-        }}>
-          Capability-first<br />
-          compute on <span style={{ color: LIME }}>trusted</span><br />
-          peer hardware.
-        </h1>
-
-        {/* Tagline */}
-        <p style={{ color: '#AAAAAA', fontSize: '15px', maxWidth: '440px', lineHeight: 1.65, marginBottom: '32px' }}>
-          Providers publish bounded CPU-rendering policies. Requesters submit an allowlisted workload,
-          approve it explicitly, and follow the complete execution audit trail.
-        </p>
-
-        {/* Stats */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '36px', flexWrap: 'wrap' }}>
-          <StatTile value={summary.onlineDevices} label="nodes online" />
-          <StatTile value={summary.activeCapabilities} label="capabilities live" />
-          <StatTile value={summary.runningJobs} label="jobs running" />
-          <StatTile value={summary.completedJobs} label="completed" />
-        </div>
-
-        {/* CTA buttons */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => navigate('/provider')}
-            className="neo-btn"
-            style={{ background: LIME, color: BLACK, padding: '10px 22px', fontSize: '14px' }}
-          >
-            Share my compute
+    <div className="control-room">
+      <PageHeader
+        eyebrow="PowerMesh / live control room"
+        title="Bounded compute, visible end to end."
+        description="A capability-first view of provider availability, matched work and verified execution evidence."
+        action={(
+          <button type="button" className="neo-btn page-header__primary" onClick={() => navigate('/request')}>
+            Compose a job <ArrowRight size={14} />
           </button>
-          <button
-            onClick={() => navigate('/request')}
-            className="neo-btn"
-            style={{ background: 'transparent', color: WHITE, borderColor: WHITE, padding: '10px 22px', fontSize: '14px' }}
-          >
-            Run a job
-          </button>
-          <button
-            onClick={() => navigate('/network')}
-            style={{ color: MUTED, padding: '10px 16px', fontSize: '14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'Instrument Sans', fontWeight: 500 }}
-          >
-            View network →
-          </button>
-        </div>
-      </div>
+        )}
+      />
 
-      {/* ── Feature cards ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-        <FeatureCard
-          icon={Monitor}
-          title="Share your compute"
-          desc="Register a provider agent, publish bounded Mandelbrot render limits, and approve every matched request before it runs."
-          cta="Provider Console"
-          bg={LIME}
-          fg={BLACK}
-          iconColor={BLACK}
-          onClick={() => navigate('/provider')}
-        />
-        <FeatureCard
-          icon={Upload}
-          title="Run a verified render"
-          desc="Choose image dimensions, iteration depth and palette. The coordinator matches only live providers whose policy fits the request."
-          cta="Requester Studio"
-          bg={BLACK}
-          fg={WHITE}
-          iconColor={LIME}
-          onClick={() => navigate('/request')}
-        />
-        <FeatureCard
-          icon={Network}
-          title="Watch the mesh live"
-          desc="See online nodes, published capability limits, reliability evidence and durable job states from the coordinator."
-          cta="Network Mesh"
-          bg={WHITE}
-          fg={BLACK}
-          iconColor={BLACK}
-          onClick={() => navigate('/network')}
-        />
-      </div>
-
-      {/* ── How it works + Security ────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-
-        {/* How it works */}
-        <div className="neo-card" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-            <div style={{ background: BLACK, borderRadius: '2px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Zap size={13} style={{ color: LIME }} />
-            </div>
-            <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '15px' }}>How it works</span>
+      <section className="control-hero" aria-labelledby="network-pulse-title">
+        <div className="control-hero__signal">
+          <span className="control-hero__orb" data-live={connection === 'open'}><Zap size={22} /></span>
+          <div>
+            <p className="section-kicker">Coordinator signal</p>
+            <h2 id="network-pulse-title">{connection === 'open' ? 'The mesh is live.' : 'Re-establishing the mesh.'}</h2>
+            <p>{summary.onlineDevices} provider node{summary.onlineDevices === 1 ? '' : 's'} currently advertising {summary.activeCapabilities} bounded capabilit{summary.activeCapabilities === 1 ? 'y' : 'ies'}.</p>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {[
-              ['Provider publishes a capability', 'The agent reports CPU and isolation mode; the owner sets render and concurrency limits.'],
-              ['Requester submits a job', 'The coordinator validates parameters and selects a compatible live provider.'],
-              ['Provider reviews and approves', 'The owner sees the exact dimensions, iterations, palette and runtime before approving.'],
-              ['Job runs, result returns', 'The agent streams progress and returns a rect-only SVG validated before storage.'],
-            ].map(([title, desc], i) => (
-              <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <div style={{
-                  width: '22px', height: '22px', flexShrink: 0,
-                  background: LIME, border: `2px solid ${BLACK}`, borderRadius: '2px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontFamily: 'JetBrains Mono', fontWeight: 700, fontSize: '11px', color: BLACK,
-                }}>
-                  {i + 1}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '2px', color: BLACK }}>{title}</div>
-                  <div style={{ fontSize: '12px', color: '#666', lineHeight: 1.5 }}>{desc}</div>
-                </div>
-              </div>
+        </div>
+        <div className="control-hero__metrics" aria-label="Network summary">
+          <div><span>01</span><strong>{summary.onlineDevices}</strong><small>online providers</small></div>
+          <div><span>02</span><strong>{availableSlots}</strong><small>published slots</small></div>
+          <div><span>03</span><strong>{activeJobs.length}</strong><small>open jobs</small></div>
+          <div><span>04</span><strong>{summary.completedJobs}</strong><small>verified results</small></div>
+        </div>
+      </section>
+
+      <div className="control-grid">
+        <CapacityGraph available={availableSlots} used={usedSlots} />
+
+        <section className="live-lane" aria-labelledby="active-jobs-title">
+          <div className="section-heading">
+            <div><p className="section-kicker">Work lane</p><h2 id="active-jobs-title">Current jobs</h2></div>
+            <button type="button" onClick={() => navigate('/network')}>Open network <ArrowRight size={12} /></button>
+          </div>
+          <div className="live-lane__rows">
+            {activeJobs.length === 0 ? (
+              <div className="inline-empty"><span>00</span><p>No work is active. The mesh is ready for a bounded request.</p></div>
+            ) : activeJobs.slice(0, 5).map((job, index) => (
+              <button type="button" key={job.id} className="job-lane" onClick={() => navigate(`/jobs/${job.id}`)}>
+                <span className="job-lane__index">{String(index + 1).padStart(2, '0')}</span>
+                <span className="job-lane__copy"><strong>Mandelbrot render</strong><small>{job.input.parameters.width}×{job.input.parameters.height} · {job.input.parameters.maxIterations} iterations</small></span>
+                <StatusPill status={job.status} className="status-pill" />
+                <ArrowRight size={13} />
+              </button>
             ))}
           </div>
-        </div>
-
-        {/* Security model */}
-        <div className="neo-card" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-            <div style={{ background: GREEN, borderRadius: '2px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${BLACK}` }}>
-              <Lock size={13} style={{ color: BLACK }} />
-            </div>
-            <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '15px' }}>Security model</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
-            {[
-              ['Docker network disabled', 'Secure Docker mode runs without internet access; local development mode does not make this claim.'],
-              ['Read-only Docker root', 'Secure Docker mode uses a read-only root filesystem and a bounded temporary workspace.'],
-              ['Workspace cleanup', 'The agent removes each job workspace after completion, failure, cancellation or shutdown.'],
-              ['Provider approves every job', 'Nothing runs without an explicit approval click. You see who is asking and what will run.'],
-              ['Kill switch', 'Providers can pause the device and terminate its assigned non-terminal jobs immediately.'],
-            ].map(([title, desc]) => (
-              <div key={title} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <div style={{
-                  width: '18px', height: '18px', flexShrink: 0,
-                  background: GREEN, border: `2px solid ${BLACK}`, borderRadius: '2px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '10px', fontWeight: 900, color: BLACK, marginTop: '1px',
-                }}>
-                  ✓
-                </div>
-                <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
-                  <span style={{ fontWeight: 600, color: BLACK }}>{title}</span>
-                  <span style={{ color: '#555' }}> — {desc}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        </section>
       </div>
 
-      {/* ── Who is this for ────────────────────────────────── */}
-      <div style={{
-        background: BLACK,
-        border: `2.5px solid ${BLACK}`,
-        boxShadow: `4px 4px 0 ${LIME}`,
-        borderRadius: '4px',
-        padding: '24px 32px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '28px',
-      }}>
-        <Users size={28} style={{ color: LIME, flexShrink: 0 }} />
-        <div>
-          <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: '15px', color: WHITE, marginBottom: '6px' }}>
-            Who is this for?
-          </div>
-          <div style={{ fontSize: '13px', color: '#AAAAAA', lineHeight: 1.7 }}>
-            <strong style={{ color: LIME }}>Providers</strong> — students or teams willing to offer bounded CPU time through an explicit policy.{' '}
-            <strong style={{ color: LIME }}>Requesters</strong> — people who need a visual compute job without handing arbitrary code to another machine.{' '}
-            Demo sessions remove account setup; the coordinator still enforces role and ownership checks.
-          </div>
-        </div>
+      <div className="control-grid control-grid--lower">
+        <JobDistribution jobs={jobs} />
+        <SseActivityGraph events={events} />
       </div>
 
+      <section className="event-strip" aria-labelledby="recent-activity-title">
+        <div className="event-strip__title">
+          <p className="section-kicker">Recent state changes</p>
+          <h2 id="recent-activity-title">Coordinator ledger</h2>
+        </div>
+        <div className="event-strip__rail">
+          {recentJobs.length === 0 ? (
+            <span className="event-strip__empty">No job records yet. Submit a bounded render to start the ledger.</span>
+          ) : recentJobs.map((job) => (
+            <button type="button" key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}>
+              <span className="event-strip__dot" data-status={job.status} />
+              <span><strong>{job.status.replace(/_/g, ' ')}</strong><small>{relativeTime(job.updatedAt)} · {job.id.slice(0, 8)}</small></span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="control-actions" aria-label="Primary PowerMesh workflows">
+        <button type="button" onClick={() => navigate('/network')}><Network size={18} /><span><strong>Inspect the mesh</strong><small>Topology, live policies and jobs</small></span><ArrowRight size={14} /></button>
+        <button type="button" onClick={() => navigate('/provider')}><Monitor size={18} /><span><strong>Publish a capability</strong><small>Bound a provider policy</small></span><ArrowRight size={14} /></button>
+        <button type="button" onClick={() => navigate('/request')}><Upload size={18} /><span><strong>Request compute</strong><small>Configure an allowlisted render</small></span><ArrowRight size={14} /></button>
+        <div className="control-actions__boundary"><ShieldCheck size={18} /><span><strong>Execution boundary</strong><small>No shell, filesystem or arbitrary code access</small></span></div>
+      </section>
     </div>
   );
 }
