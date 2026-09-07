@@ -43,7 +43,7 @@ export function loadApiConfig(): ApiConfig {
   return {
     host: process.env["API_HOST"] ?? "127.0.0.1",
     port: readPositiveInteger("API_PORT", 8787),
-    corsOrigin: process.env["CORS_ORIGIN"] ?? "http://localhost:3000",
+    corsOrigin: process.env["CORS_ORIGIN"] ?? "http://localhost:5173",
     authSecret,
     tokenTtlSeconds: readPositiveInteger("TOKEN_TTL_SECONDS", 28_800),
     databasePath: resolve(process.env["DATABASE_PATH"] ?? "./data/powermesh.db"),

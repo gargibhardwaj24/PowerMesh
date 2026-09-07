@@ -1,334 +1,282 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, Cpu, Lock, Radio, Send, ShieldCheck } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
-import { Brain, Cpu, Video, Layers, Send, AlertTriangle } from 'lucide-react';
+import {
+  JOB_RUNTIME_LIMITS,
+  MANDELBROT_LIMITS,
+  MANDELBROT_VIEW_LIMITS,
+  type JobCreateInput,
+  type MandelbrotPalette,
+} from '../../../packages/contracts/src/index';
+import PageHeader from '../components/PageHeader';
+import { ReliabilityGauge } from '../components/TelemetryCharts';
 import { useStore } from '../store';
-import { api } from '../api';
-import UploadZone from '../components/UploadZone';
-import type { CapabilityType } from '../api/types';
 
-const CAP_TYPES: { type: CapabilityType; label: string; sub: string; icon: typeof Brain; color: string }[] = [
-  { type: 'ai_inference',    label: 'AI Inference',    sub: 'Image classification, vision models', icon: Brain,  color: '#7C3AED' },
-  { type: 'cpu_compute',     label: 'CPU Compute',     sub: 'General-purpose parallel workloads',  icon: Cpu,    color: '#2563EB' },
-  { type: 'video_transcode', label: 'Video Transcode', sub: 'Encoding, compression, conversion',   icon: Video,  color: '#DB2777' },
-  { type: 'embeddings',      label: 'Embeddings',      sub: 'Text vectorisation, semantic search', icon: Layers, color: '#059669' },
-];
+const DEFAULT_JOB: JobCreateInput = {
+  type: 'MANDELBROT_RENDER',
+  requestedRuntimeMs: 10_000,
+  parameters: {
+    width: 640,
+    height: 480,
+    maxIterations: 180,
+    palette: 'OCEAN',
+    centerX: -0.5,
+    centerY: 0,
+    zoom: 1,
+  },
+};
+
+const PALETTES: MandelbrotPalette[] = ['OCEAN', 'EMBER', 'MONO'];
+const STEPS = [
+  { id: 1, label: 'Configure' },
+  { id: 2, label: 'Provider preview' },
+  { id: 3, label: 'Review & submit' },
+] as const;
+type ComposerStep = (typeof STEPS)[number]['id'];
+
+function rangeError(label: string, value: number, min: number, max: number): string | null {
+  if (!Number.isFinite(value)) return `${label} must be a number.`;
+  if (value < min || value > max) return `${label} must be between ${min} and ${max}.`;
+  return null;
+}
+
+function NumberField({ label, value, min, max, step = 1, onChange }: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (value: number) => void;
+}) {
+  const error = rangeError(label, value, min, max);
+  const id = `request-${label.toLowerCase().replace(/[^a-z]+/g, '-')}`;
+  return (
+    <label className="field-control" htmlFor={id}>
+      <span>{label}<small>{min}–{max}</small></span>
+      <input
+        id={id}
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        aria-invalid={error !== null}
+        aria-describedby={error === null ? undefined : `${id}-error`}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+      {error !== null && <small id={`${id}-error`} className="field-error">{error}</small>}
+    </label>
+  );
+}
 
 export default function RequesterConsole() {
   const navigate = useNavigate();
-  const viewingAs = useStore(s => s.viewingAs);
-  const capsMap = useStore(useShallow(s => s.capabilities));
-  const devicesMap = useStore(useShallow(s => s.devices));
-  const liveCaps = useMemo(
-    () => Object.values(capsMap).filter(c => c.enabled && !c.revoked),
-    [capsMap],
-  );
-
-  const [selectedType, setSelectedType] = useState<CapabilityType | null>(null);
-  const [selectedCapId, setSelectedCapId] = useState<string | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const reduceMotion = useReducedMotion();
+  const capabilitiesMap = useStore(useShallow((state) => state.capabilities));
+  const devicesMap = useStore(useShallow((state) => state.devices));
+  const submitJob = useStore((state) => state.submitJob);
+  const pushToast = useStore((state) => state.pushToast);
+  const [input, setInput] = useState<JobCreateInput>(DEFAULT_JOB);
+  const [step, setStep] = useState<ComposerStep>(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const matchingCaps = useMemo(
-    () => selectedType ? liveCaps.filter(c => c.type === selectedType) : [],
-    [liveCaps, selectedType],
-  );
+  const eligibleCapabilities = useMemo(() => {
+    const now = Date.now();
+    return Object.values(capabilitiesMap).filter((capability) => {
+      const device = devicesMap[capability.deviceId];
+      return capability.status === 'ACTIVE'
+        && Date.parse(capability.expiresAt) > now
+        && device?.status === 'ONLINE'
+        && capability.maxWidth >= input.parameters.width
+        && capability.maxHeight >= input.parameters.height
+        && capability.maxIterations >= input.parameters.maxIterations
+        && capability.maxRuntimeMs >= input.requestedRuntimeMs;
+    }).sort((left, right) => right.reliabilityScore - left.reliabilityScore);
+  }, [capabilitiesMap, devicesMap, input]);
 
-  const selectedCap = selectedCapId ? capsMap[selectedCapId] : null;
-  const tooManyFiles = selectedCap && files.length > selectedCap.max_input_items;
-
-  const canSubmit =
-    selectedType !== null &&
-    files.length > 0 &&
-    matchingCaps.length > 0 &&
-    !tooManyFiles &&
-    !submitting;
-
-  function pickType(type: CapabilityType) {
-    setSelectedType(type);
-    setSelectedCapId(null);
+  function setParameter<K extends keyof JobCreateInput['parameters']>(
+    key: K,
+    value: JobCreateInput['parameters'][K],
+  ): void {
+    setInput((current) => ({ ...current, parameters: { ...current.parameters, [key]: value } }));
   }
 
-  async function handleSubmit() {
-    if (!selectedType) return;
+  const parameters = input.parameters;
+  const validationErrors = [
+    rangeError('Width', parameters.width, MANDELBROT_LIMITS.MIN_WIDTH, MANDELBROT_LIMITS.MAX_WIDTH),
+    rangeError('Height', parameters.height, MANDELBROT_LIMITS.MIN_HEIGHT, MANDELBROT_LIMITS.MAX_HEIGHT),
+    rangeError('Iterations', parameters.maxIterations, MANDELBROT_LIMITS.MIN_ITERATIONS, MANDELBROT_LIMITS.MAX_ITERATIONS),
+    rangeError('Centre X', parameters.centerX, MANDELBROT_VIEW_LIMITS.MIN_CENTER_X, MANDELBROT_VIEW_LIMITS.MAX_CENTER_X),
+    rangeError('Centre Y', parameters.centerY, MANDELBROT_VIEW_LIMITS.MIN_CENTER_Y, MANDELBROT_VIEW_LIMITS.MAX_CENTER_Y),
+    rangeError('Zoom', parameters.zoom, MANDELBROT_VIEW_LIMITS.MIN_ZOOM, MANDELBROT_VIEW_LIMITS.MAX_ZOOM),
+    rangeError('Requested runtime', input.requestedRuntimeMs, JOB_RUNTIME_LIMITS.MIN_MS, JOB_RUNTIME_LIMITS.MAX_MS),
+  ];
+  const valid = validationErrors.every((validationError) => validationError === null);
+
+  function moveTo(nextStep: ComposerStep): void {
+    if (nextStep > 1 && !valid) {
+      setError('Fix the highlighted values before continuing.');
+      return;
+    }
+    setError(null);
+    setStep(nextStep);
+  }
+
+  async function handleSubmit(): Promise<void> {
+    if (!valid) return;
     setSubmitting(true);
     setError(null);
     try {
-      const job = await api.submitJob(files, selectedType, viewingAs);
+      const job = await submitJob(input);
+      pushToast({
+        tone: 'success',
+        title: 'Bounded render submitted',
+        detail: job.status === 'QUEUED' ? 'No live policy matched yet; the job can be rematched.' : 'The provider must approve the exact capability request.',
+      });
       navigate(`/jobs/${job.id}`);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Submission failed');
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : 'Job submission failed';
+      setError(message);
+      pushToast({ tone: 'error', title: 'Job submission failed', detail: message });
       setSubmitting(false);
     }
   }
 
-  const fmtMem = (mb: number) => mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`;
-  const fmtTime = (s: number) => s < 60 ? `${s}s` : `${Math.floor(s / 60)}m`;
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-24" style={{ color: 'var(--pm-text)' }}>Requester Studio</h1>
-        <p className="text-13 mt-0.5" style={{ color: 'var(--pm-muted)' }}>
-          Dispatch compute jobs to peer providers — sandboxed, approved, audited
-        </p>
-      </div>
+    <div className="requester-page">
+      <PageHeader
+        eyebrow="Requester / job composer"
+        title="Ask for a capability, not a machine."
+        description="Configure the allowlisted Mandelbrot contract, inspect compatible live policies, then submit the exact bounded request."
+      />
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        {/* Left column */}
-        <div className="space-y-5">
+      <nav className="composer-steps" aria-label="Job composer progress">
+        <span className="composer-steps__line" aria-hidden="true"><i style={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }} /></span>
+        {STEPS.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className={item.id === step ? 'is-active' : item.id < step ? 'is-complete' : ''}
+            onClick={() => moveTo(item.id)}
+            aria-current={item.id === step ? 'step' : undefined}
+          >
+            <span>{item.id < step ? <Check size={13} /> : String(item.id).padStart(2, '0')}</span>
+            <strong>{item.label}</strong>
+          </button>
+        ))}
+      </nav>
 
-          {/* Step 1: Capability type */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-11 font-mono font-semibold"
-                style={{ background: 'var(--pm-run)', color: '#fff' }}
-              >1</div>
-              <h2 className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>Capability type</h2>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5">
-              {CAP_TYPES.map(({ type, label, sub, icon: Icon, color }) => {
-                const count = liveCaps.filter(c => c.type === type).length;
-                const active = selectedType === type;
-                return (
-                  <button
-                    key={type}
-                    onClick={() => pickType(type)}
-                    className="p-4 rounded-xl text-left transition-all"
-                    style={{
-                      background: active ? `${color}0D` : 'var(--pm-surface)',
-                      border: `1.5px solid ${active ? color : 'var(--pm-line)'}`,
-                      boxShadow: active ? `0 0 0 3px ${color}18` : 'none',
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: `${color}18` }}
-                      >
-                        <Icon size={16} style={{ color }} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-13 font-semibold" style={{ color: active ? color : 'var(--pm-text)' }}>{label}</div>
-                        <div className="text-11 leading-tight mt-0.5" style={{ color: 'var(--pm-muted)' }}>{sub}</div>
-                        <div
-                          className="text-11 font-mono mt-1.5"
-                          style={{ color: count > 0 ? 'var(--pm-ok)' : 'var(--pm-faint)' }}
-                        >
-                          {count > 0 ? `${count} provider${count !== 1 ? 's' : ''} online` : 'no providers'}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Step 2: Upload */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-11 font-mono font-semibold"
-                style={{ background: 'var(--pm-run)', color: '#fff' }}
-              >2</div>
-              <h2 className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>Input files</h2>
-            </div>
-            <UploadZone files={files} onChange={setFiles} />
-
-            {tooManyFiles && (
-              <div className="mt-2 flex items-center gap-2 text-13" style={{ color: 'var(--pm-stop)' }}>
-                <AlertTriangle size={14} />
-                Selected provider accepts max {selectedCap!.max_input_items} items — remove {files.length - selectedCap!.max_input_items} file{files.length - selectedCap!.max_input_items > 1 ? 's' : ''}.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-5">
-
-          {/* Step 3: Provider selection */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-11 font-mono font-semibold"
-                style={{ background: 'var(--pm-run)', color: '#fff' }}
-              >3</div>
-              <h2 className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>
-                Provider selection
-                <span className="ml-1.5 text-12 font-normal" style={{ color: 'var(--pm-muted)' }}>
-                  {selectedType ? '(auto-match or pin one)' : '— pick a type first'}
-                </span>
-              </h2>
-            </div>
-
-            {!selectedType ? (
-              <div
-                className="rounded-xl p-6 text-center"
-                style={{ background: 'var(--pm-surface)', border: '1px dashed var(--pm-line)' }}
-              >
-                <p className="text-13" style={{ color: 'var(--pm-faint)' }}>Select a capability type to see available providers</p>
-              </div>
-            ) : matchingCaps.length === 0 ? (
-              <div
-                className="rounded-xl p-6 text-center"
-                style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)' }}
-              >
-                <p className="text-13" style={{ color: 'var(--pm-stop)' }}>No providers online for this capability</p>
-                <p className="text-12 mt-1" style={{ color: 'var(--pm-muted)' }}>Try a different type or wait for a provider to come online</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {/* Auto-match option */}
-                <button
-                  onClick={() => setSelectedCapId(null)}
-                  className="w-full rounded-xl p-3.5 text-left transition-all"
-                  style={{
-                    background: selectedCapId === null ? 'color-mix(in srgb, var(--pm-run) 6%, var(--pm-surface))' : 'var(--pm-surface)',
-                    border: `1.5px solid ${selectedCapId === null ? 'var(--pm-run)' : 'var(--pm-line)'}`,
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full pulse-dot" style={{ background: 'var(--pm-run)', flexShrink: 0 }} />
-                    <span className="text-13 font-semibold" style={{ color: selectedCapId === null ? 'var(--pm-run)' : 'var(--pm-text)' }}>
-                      Auto-match best provider
-                    </span>
-                    <span
-                      className="ml-auto text-11 font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: 'color-mix(in srgb, var(--pm-run) 10%, transparent)', color: 'var(--pm-run)' }}
-                    >recommended</span>
-                  </div>
-                  <p className="text-12 mt-1 ml-4" style={{ color: 'var(--pm-muted)' }}>
-                    System scores all {matchingCaps.length} provider{matchingCaps.length !== 1 ? 's' : ''} and picks the fastest available
-                  </p>
-                </button>
-
-                {/* Individual providers */}
-                {matchingCaps.map(cap => {
-                  const dev = devicesMap[cap.device_id];
-                  const active = selectedCapId === cap.id;
-                  return (
-                    <button
-                      key={cap.id}
-                      onClick={() => setSelectedCapId(active ? null : cap.id)}
-                      className="w-full rounded-xl p-3.5 text-left transition-all"
-                      style={{
-                        background: active ? 'color-mix(in srgb, var(--pm-gold) 5%, var(--pm-surface))' : 'var(--pm-surface)',
-                        border: `1.5px solid ${active ? 'var(--pm-gold)' : 'var(--pm-line)'}`,
-                      }}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: 'var(--pm-ok)' }} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-13 font-medium" style={{ color: 'var(--pm-text)' }}>{cap.label}</span>
-                          </div>
-                          <div className="text-11 font-mono mt-0.5" style={{ color: 'var(--pm-muted)' }}>
-                            {dev?.name ?? cap.device_id}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1.5 text-11 font-mono" style={{ color: 'var(--pm-faint)' }}>
-                            <span>{cap.max_cpu_cores} cores</span>
-                            <span>·</span>
-                            <span>{fmtMem(cap.max_memory_mb)}</span>
-                            <span>·</span>
-                            <span>max {fmtTime(cap.max_runtime_sec)}</span>
-                            <span>·</span>
-                            <span>{cap.max_input_items} items</span>
-                          </div>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className="text-11 font-mono" style={{ color: 'var(--pm-faint)' }}>
-                            {cap.jobs_used_this_hour}/{cap.jobs_per_hour}/hr
-                          </div>
-                          {dev && (
-                            <div className="text-11 font-mono" style={{ color: 'var(--pm-faint)' }}>
-                              {(dev.reliability * 100).toFixed(0)}% reliable
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Step 4: Dispatch */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-11 font-mono font-semibold"
-                style={{ background: 'var(--pm-run)', color: '#fff' }}
-              >4</div>
-              <h2 className="text-14 font-semibold" style={{ color: 'var(--pm-text)' }}>Dispatch</h2>
-            </div>
-
-            {/* Job summary card */}
-            <div
-              className="rounded-xl p-4 mb-3 space-y-1.5 text-13 font-mono"
-              style={{ background: 'var(--pm-surface)', border: '1px solid var(--pm-line)' }}
-            >
-              {[
-                ['Type',     selectedType ? CAP_TYPES.find(t => t.type === selectedType)?.label ?? selectedType : '—'],
-                ['Files',    files.length > 0 ? `${files.length} file${files.length !== 1 ? 's' : ''}` : '—'],
-                ['Provider', selectedCapId ? (capsMap[selectedCapId]?.label ?? selectedCapId) : `auto (${matchingCaps.length} available)`],
-                ['As',       viewingAs],
-              ].map(([k, v]) => (
-                <div key={k} className="flex gap-4">
-                  <span className="w-16 flex-shrink-0" style={{ color: 'var(--pm-faint)' }}>{k}</span>
-                  <span style={{ color: 'var(--pm-text)' }}>{v}</span>
+      <section className="composer-stage">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={step}
+            initial={reduceMotion ? false : { opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -8 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+          >
+            {step === 1 && (
+              <div className="composer-configure">
+                <div className="composer-stage__intro">
+                  <span><Cpu size={19} /></span>
+                  <div><p className="section-kicker">Step 01 / configure</p><h2>Mandelbrot render</h2><p>Deterministic CPU-bound SVG generation with server-validated parameters.</p></div>
                 </div>
-              ))}
-            </div>
-
-            {error && (
-              <div className="mb-3 flex items-center gap-2 text-13 font-mono" style={{ color: 'var(--pm-stop)' }}>
-                <AlertTriangle size={14} />
-                {error}
+                <div className="composer-fields">
+                  <NumberField label="Width" value={parameters.width} min={MANDELBROT_LIMITS.MIN_WIDTH} max={MANDELBROT_LIMITS.MAX_WIDTH} onChange={(value) => setParameter('width', value)} />
+                  <NumberField label="Height" value={parameters.height} min={MANDELBROT_LIMITS.MIN_HEIGHT} max={MANDELBROT_LIMITS.MAX_HEIGHT} onChange={(value) => setParameter('height', value)} />
+                  <NumberField label="Iterations" value={parameters.maxIterations} min={MANDELBROT_LIMITS.MIN_ITERATIONS} max={MANDELBROT_LIMITS.MAX_ITERATIONS} onChange={(value) => setParameter('maxIterations', value)} />
+                  <NumberField label="Centre X" value={parameters.centerX} min={MANDELBROT_VIEW_LIMITS.MIN_CENTER_X} max={MANDELBROT_VIEW_LIMITS.MAX_CENTER_X} step={0.05} onChange={(value) => setParameter('centerX', value)} />
+                  <NumberField label="Centre Y" value={parameters.centerY} min={MANDELBROT_VIEW_LIMITS.MIN_CENTER_Y} max={MANDELBROT_VIEW_LIMITS.MAX_CENTER_Y} step={0.05} onChange={(value) => setParameter('centerY', value)} />
+                  <NumberField label="Zoom" value={parameters.zoom} min={MANDELBROT_VIEW_LIMITS.MIN_ZOOM} max={MANDELBROT_VIEW_LIMITS.MAX_ZOOM} step={0.25} onChange={(value) => setParameter('zoom', value)} />
+                  <NumberField label="Requested runtime" value={input.requestedRuntimeMs} min={JOB_RUNTIME_LIMITS.MIN_MS} max={JOB_RUNTIME_LIMITS.MAX_MS} step={1_000} onChange={(requestedRuntimeMs) => setInput((current) => ({ ...current, requestedRuntimeMs }))} />
+                </div>
+                <fieldset className="palette-selector">
+                  <legend>Render palette</legend>
+                  {PALETTES.map((palette) => (
+                    <button type="button" key={palette} className={parameters.palette === palette ? 'is-active' : ''} onClick={() => setParameter('palette', palette)} aria-pressed={parameters.palette === palette}>
+                      <i data-palette={palette} /><span>{palette}</span>
+                    </button>
+                  ))}
+                </fieldset>
               </div>
             )}
 
-            <button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className="w-full py-3 rounded-xl text-14 font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              style={{
-                background: canSubmit ? 'var(--pm-run)' : 'var(--pm-raised)',
-                color: canSubmit ? '#fff' : 'var(--pm-faint)',
-                border: canSubmit ? 'none' : '1px solid var(--pm-line)',
-              }}
-              onMouseEnter={e => { if (canSubmit) (e.currentTarget as HTMLElement).style.background = '#1D4ED8'; }}
-              onMouseLeave={e => { if (canSubmit) (e.currentTarget as HTMLElement).style.background = 'var(--pm-run)'; }}
-            >
-              {submitting ? (
-                <>
-                  <span
-                    className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
-                    style={{ borderColor: '#fff', borderTopColor: 'transparent' }}
-                  />
-                  Dispatching…
-                </>
-              ) : (
-                <>
-                  <Send size={15} />
-                  Dispatch Job
-                </>
-              )}
-            </button>
-
-            {!canSubmit && !submitting && (
-              <p className="text-12 text-center mt-2" style={{ color: 'var(--pm-faint)' }}>
-                {!selectedType ? 'Pick a capability type' : files.length === 0 ? 'Upload at least one file' : matchingCaps.length === 0 ? 'No providers available for this type' : tooManyFiles ? 'Too many files for selected provider' : ''}
-              </p>
+            {step === 2 && (
+              <div className="provider-preview">
+                <div className="composer-stage__intro">
+                  <span><Radio size={19} /></span>
+                  <div><p className="section-kicker">Step 02 / compatible policies</p><h2>{eligibleCapabilities.length} live match{eligibleCapabilities.length === 1 ? '' : 'es'}</h2><p>Compatibility is calculated from live status, expiry and every requested limit. Final match scoring happens on the coordinator.</p></div>
+                </div>
+                <div className="provider-preview__list">
+                  {eligibleCapabilities.length === 0 ? (
+                    <div className="provider-preview__empty"><strong>No live policy currently fits every limit.</strong><p>You can still submit. The coordinator will hold the request in queue until it is rematched.</p></div>
+                  ) : eligibleCapabilities.map((capability, index) => {
+                    const provider = devicesMap[capability.deviceId];
+                    return (
+                      <div className="provider-preview__row" key={capability.id}>
+                        <span className="provider-preview__rank">{String(index + 1).padStart(2, '0')}</span>
+                        <span className="provider-preview__identity"><strong>{provider?.name ?? 'Provider node'}</strong><small>{provider?.hardware?.executionIsolation ?? 'isolation unreported'} · policy expires {new Date(capability.expiresAt).toLocaleTimeString()}</small></span>
+                        <dl>
+                          <div><dt>Canvas</dt><dd>{capability.maxWidth}×{capability.maxHeight}</dd></div>
+                          <div><dt>Runtime</dt><dd>{capability.maxRuntimeMs} ms</dd></div>
+                          <div><dt>Slots</dt><dd>{capability.maxConcurrentJobs}</dd></div>
+                        </dl>
+                        <ReliabilityGauge score={capability.reliabilityScore} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
-          </div>
-        </div>
-      </div>
+
+            {step === 3 && (
+              <div className="composer-review">
+                <div className="composer-stage__intro">
+                  <span><ShieldCheck size={19} /></span>
+                  <div><p className="section-kicker">Step 03 / exact request</p><h2>Review the bounded contract</h2><p>The provider will see these exact values before deciding whether to approve execution.</p></div>
+                </div>
+                <div className="composer-review__grid">
+                  <dl className="review-spec">
+                    <div><dt>Capability</dt><dd>MANDELBROT_RENDER</dd></div>
+                    <div><dt>Canvas</dt><dd>{parameters.width} × {parameters.height}</dd></div>
+                    <div><dt>Iterations</dt><dd>{parameters.maxIterations}</dd></div>
+                    <div><dt>Centre</dt><dd>{parameters.centerX}, {parameters.centerY}</dd></div>
+                    <div><dt>Zoom</dt><dd>{parameters.zoom}×</dd></div>
+                    <div><dt>Palette</dt><dd>{parameters.palette}</dd></div>
+                    <div><dt>Runtime request</dt><dd>{input.requestedRuntimeMs} ms</dd></div>
+                    <div><dt>Compatible now</dt><dd>{eligibleCapabilities.length}</dd></div>
+                  </dl>
+                  <div className="execution-boundary">
+                    <p className="section-kicker">Enforced boundary</p>
+                    <h3><Lock size={15} /> Request data only</h3>
+                    <ul>
+                      <li><Check size={12} /> No requester-supplied source code</li>
+                      <li><Check size={12} /> No arbitrary container image</li>
+                      <li><Check size={12} /> No shell, desktop or filesystem access</li>
+                      <li><Check size={12} /> Returned SVG validated before storage</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+
+        {error !== null && <p className="form-error composer-stage__error" role="alert">{error}</p>}
+
+        <footer className="composer-footer">
+          <button type="button" className="composer-footer__back" onClick={() => moveTo(Math.max(1, step - 1) as ComposerStep)} disabled={step === 1 || submitting}><ArrowLeft size={14} /> Back</button>
+          <span>Step {step} of {STEPS.length}</span>
+          {step < 3 ? (
+            <button type="button" className="composer-footer__next" onClick={() => moveTo((step + 1) as ComposerStep)} disabled={!valid}>Continue <ArrowRight size={14} /></button>
+          ) : (
+            <button type="button" className="composer-footer__submit" onClick={() => { void handleSubmit(); }} disabled={!valid || submitting}><Send size={14} /> {submitting ? 'Submitting…' : 'Submit bounded job'}</button>
+          )}
+        </footer>
+      </section>
     </div>
   );
 }

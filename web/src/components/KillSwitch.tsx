@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
 
 const RED   = '#FF2424';
@@ -13,14 +13,24 @@ interface Props {
 
 export default function KillSwitch({ label = 'Stop all', onConfirm, className, size = 'md' }: Props) {
   const [confirming, setConfirming] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+  }, []);
 
   function handleClick() {
     if (confirming) {
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+      resetTimer.current = null;
       onConfirm();
       setConfirming(false);
     } else {
       setConfirming(true);
-      setTimeout(() => setConfirming(false), 4000);
+      resetTimer.current = setTimeout(() => {
+        setConfirming(false);
+        resetTimer.current = null;
+      }, 4_000);
     }
   }
 

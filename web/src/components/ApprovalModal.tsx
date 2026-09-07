@@ -1,57 +1,35 @@
-import { useEffect, useState } from 'react';
-import type { Job } from '../api/types';
+import { useState } from 'react';
+import type { CoordinatorJob } from '../api/coordinator';
 import { useStore } from '../store';
-import { api } from '../api';
 
-const COUNTDOWN_SEC = 30;
 const LIME  = '#D4FF00';
 const BLACK = '#0D0D0D';
 
-function formatBytes(count: number) {
-  const mb = (count * 256) / 1024;
-  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${count * 256} KB`;
-}
-
 interface Props {
-  job: Job;
+  job: CoordinatorJob;
   onClose: () => void;
 }
 
 export default function ApprovalModal({ job, onClose }: Props) {
-  const capabilities = useStore(s => s.capabilities);
-  const cap = job.capability_id ? capabilities[job.capability_id] : null;
-  const [seconds, setSeconds] = useState(COUNTDOWN_SEC);
-  const [acted, setActed] = useState(false);
+  const capability = useStore((state) => job.capabilityId === null ? undefined : state.capabilities[job.capabilityId]);
+  const approveJob = useStore((state) => state.approveJob);
+  const rejectJob = useStore((state) => state.rejectJob);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (acted) return;
-    const id = setInterval(() => {
-      setSeconds(s => {
-        if (s <= 1) {
-          clearInterval(id);
-          api.rejectJob(job.id, 'auto-declined: timeout').catch(() => {});
-          onClose();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [acted, job.id, onClose]);
-
-  async function approve() {
-    setActed(true);
-    await api.approveJob(job.id).catch(() => {});
-    onClose();
-  }
-  async function decline() {
-    setActed(true);
-    await api.rejectJob(job.id, 'provider declined').catch(() => {});
-    onClose();
+  async function act(action: () => Promise<CoordinatorJob>): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      onClose();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to update the job');
+      setBusy(false);
+    }
   }
 
-  const pct = (seconds / COUNTDOWN_SEC) * 100;
-
+  const parameters = job.input.parameters;
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 50,
@@ -77,28 +55,14 @@ export default function ApprovalModal({ job, onClose }: Props) {
           <span style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '18px', color: '#FFFFFF', letterSpacing: '0.02em' }}>
             APPROVE JOB?
           </span>
-          <div style={{
-            fontFamily: 'JetBrains Mono', fontSize: '20px', fontWeight: 700,
-            color: seconds <= 5 ? '#FF2424' : LIME,
-            transition: 'color 0.3s',
-            fontVariantNumeric: 'tabular-nums',
-          }}>
-            {seconds}s
-          </div>
-        </div>
-
-        {/* Countdown bar */}
-        <div style={{ height: '4px', background: '#E5E5E5' }}>
-          <div style={{
-            height: '100%',
-            width: `${pct}%`,
-            background: seconds <= 5 ? '#FF2424' : LIME,
-            transition: 'width 1s linear, background 0.3s',
-          }} />
+          <span style={{ color: LIME, fontFamily: 'JetBrains Mono', fontSize: '11px' }}>EXPLICIT CONSENT</span>
         </div>
 
         {/* Job details */}
         <div style={{ padding: '20px 24px' }}>
+          <p style={{ color: '#666', fontSize: '12px', lineHeight: 1.5, marginBottom: '14px' }}>
+            The coordinator revalidates this policy when the agent claims the job. There is no automatic approval or rejection timer.
+          </p>
           <div style={{
             background: '#F2F1EC',
             border: `2px solid ${BLACK}`,
@@ -109,15 +73,15 @@ export default function ApprovalModal({ job, onClose }: Props) {
             fontSize: '13px',
           }}>
             {[
-              ['Requester',   job.requester],
-              ['Workload',    cap?.label ?? job.capability_type],
-              ['Input',       `${job.input_count} items · ${formatBytes(job.input_count)}`],
-              ['Runtime cap', cap ? `${Math.floor(cap.max_runtime_sec / 60)}:${String(cap.max_runtime_sec % 60).padStart(2, '0')}` : '—'],
-              ['Memory cap',  cap ? (cap.max_memory_mb >= 1024 ? `${cap.max_memory_mb / 1024} GB` : `${cap.max_memory_mb} MB`) : '—'],
-              ['CPU',         cap ? `${cap.max_cpu_cores} core${cap.max_cpu_cores !== 1 ? 's' : ''}` : '—'],
-              ['Network',     'disabled'],
-              ['Filesystem',  'no host access'],
-              ['Workspace',   'ephemeral, destroyed after'],
+              ['Workload', 'MANDELBROT_RENDER'],
+              ['Canvas', `${parameters.width} × ${parameters.height}`],
+              ['Iterations', String(parameters.maxIterations)],
+              ['Palette', parameters.palette],
+              ['Centre', `${parameters.centerX}, ${parameters.centerY}`],
+              ['Zoom', `${parameters.zoom}×`],
+              ['Requested runtime', `${job.input.requestedRuntimeMs} ms`],
+              ['Policy runtime', capability === undefined ? 'Unavailable' : `${capability.maxRuntimeMs} ms`],
+              ['Parallel slots', capability === undefined ? 'Unavailable' : String(capability.maxConcurrentJobs)],
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', padding: '3px 0', borderBottom: '1px solid #E0DED8' }}>
                 <span style={{ color: '#888' }}>{label}</span>
@@ -126,10 +90,13 @@ export default function ApprovalModal({ job, onClose }: Props) {
             ))}
           </div>
 
+          {error !== null && <p style={{ color: '#FF2424', fontSize: '12px', marginBottom: '12px' }}>{error}</p>}
+
           {/* Buttons */}
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
-              onClick={decline}
+              onClick={() => { void act(() => rejectJob(job.id)); }}
+              disabled={busy}
               className="neo-btn"
               style={{
                 flex: 1,
@@ -143,7 +110,8 @@ export default function ApprovalModal({ job, onClose }: Props) {
               Decline
             </button>
             <button
-              onClick={approve}
+              onClick={() => { void act(() => approveJob(job.id)); }}
+              disabled={busy || capability === undefined}
               className="neo-btn"
               style={{
                 flex: 2,
@@ -154,7 +122,7 @@ export default function ApprovalModal({ job, onClose }: Props) {
                 borderColor: BLACK,
               }}
             >
-              ✓ Approve and run
+              {busy ? 'Updating…' : '✓ Approve and run'}
             </button>
           </div>
         </div>

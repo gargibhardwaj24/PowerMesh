@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
-import { Network, Monitor, Upload, Home, User, ChevronDown } from 'lucide-react';
-import { useStore } from '../store';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { Activity, ChevronDown, Home, Monitor, Network, PanelLeftClose, Upload, User } from 'lucide-react';
+import { useStore, type ViewingIdentity } from '../store';
+import ConnectionStatus from './ConnectionStatus';
 
 const NAV = [
   { to: '/',         icon: Home,    label: 'Overview' },
@@ -10,19 +11,25 @@ const NAV = [
   { to: '/request',  icon: Upload,  label: 'Requester Studio' },
 ];
 
-const IDENTITIES = ['gargi', 'kavya', 'anon'];
-
-const BG      = '#0D0D0D';
-const HI      = '#1A1A1A';
-const LIME    = '#D4FF00';
-const TEXT    = '#F0F0F0';
-const MUTED   = '#888888';
+const IDENTITIES: { id: ViewingIdentity; label: string }[] = [
+  { id: 'gargi', label: 'Gargi · Provider' },
+  { id: 'kavya', label: 'Kavya · Requester' },
+];
 
 export default function NavRail() {
-  const viewingAs = useStore(s => s.viewingAs);
-  const setViewingAs = useStore(s => s.setViewingAs);
+  const location = useLocation();
+  const viewingAs = useStore((state) => state.viewingAs);
+  const setViewingAs = useStore((state) => state.setViewingAs);
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
   const identityRef = useRef<HTMLDivElement>(null);
+  const expanded = hovered || pinned || identityOpen;
+  const activeIndex = useMemo(() => {
+    if (location.pathname.startsWith('/jobs/')) return 3;
+    const index = NAV.findIndex((item) => item.to === location.pathname);
+    return index < 0 ? 0 : index;
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!identityOpen) return;
@@ -34,122 +41,98 @@ export default function NavRail() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [identityOpen]);
 
-  return (
-    <nav
-      className="flex flex-col flex-shrink-0"
-      style={{ width: 192, background: BG, borderRight: `3px solid ${LIME}` }}
-    >
-      {/* Logo */}
-      <div className="px-4 py-5 mb-1" style={{ borderBottom: `1px solid #222` }}>
-        <div className="flex items-center gap-2.5">
-          <svg viewBox="0 0 28 28" width="22" height="22" style={{ flexShrink: 0 }}>
-            <path d="M14 2 L26 9 L26 23 L14 26 L2 23 L2 9 Z" fill="none" stroke={LIME} strokeWidth="2.5" />
-            <circle cx="14" cy="14" r="3.5" fill={LIME} />
-          </svg>
-          <span style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '15px', color: LIME, letterSpacing: '0.04em' }}>
-            POWERMESH
-          </span>
-        </div>
-      </div>
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Escape') return;
+      setIdentityOpen(false);
+      setPinned(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
-      {/* Nav links */}
-      <div className="flex flex-col gap-0.5 px-2 pt-3">
+  return (
+    <div className="power-rail-slot">
+      <nav
+        className={`power-rail${expanded ? ' power-rail--expanded' : ''}`}
+        aria-label="Primary navigation"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        <button
+          type="button"
+          className="power-rail__brand"
+          onClick={() => setPinned((current) => !current)}
+          aria-label={pinned ? 'Collapse Power Rail' : 'Expand Power Rail'}
+          aria-expanded={expanded}
+        >
+          <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+            <path d="M14 2 L26 9 L26 23 L14 26 L2 23 L2 9 Z" fill="none" stroke="currentColor" strokeWidth="2.5" />
+            <circle cx="14" cy="14" r="3.5" fill="currentColor" />
+          </svg>
+          <span className="power-rail__label power-rail__wordmark">POWERMESH</span>
+          <PanelLeftClose className="power-rail__pin" size={15} />
+        </button>
+
+        <div className="power-rail__routes">
+          <span
+            className="power-rail__track"
+            aria-hidden="true"
+            style={{ '--rail-progress': `${(activeIndex / (NAV.length - 1)) * 100}%` } as CSSProperties}
+          >
+            <span className="power-rail__energy" />
+          </span>
         {NAV.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
-            style={({ isActive }) => ({
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '9px 12px',
-              borderRadius: '3px',
-              fontSize: '13px',
-              fontWeight: isActive ? 700 : 500,
-              color: isActive ? '#0D0D0D' : MUTED,
-              background: isActive ? LIME : 'transparent',
-              textDecoration: 'none',
-              transition: 'color 0.1s, background 0.1s',
-              border: isActive ? `2px solid #0D0D0D` : '2px solid transparent',
-            })}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLElement;
-              if (!el.style.background || el.style.background === 'transparent')
-                el.style.color = TEXT;
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLElement;
-              if (el.style.background === 'transparent')
-                el.style.color = MUTED;
-            }}
+            className={({ isActive }) => `power-rail__route${isActive || (to === '/request' && location.pathname.startsWith('/jobs/')) ? ' is-active' : ''}`}
+            aria-label={label}
           >
-            {({ isActive }) => (
-              <>
-                <Icon size={14} strokeWidth={isActive ? 2.5 : 2} style={{ flexShrink: 0 }} />
-                {label}
-              </>
-            )}
+            <span className="power-rail__node"><Icon size={16} /></span>
+            <span className="power-rail__label">{label}</span>
           </NavLink>
         ))}
-      </div>
+        </div>
 
-      <div className="flex-1" />
-
-      {/* Identity switcher */}
-      <div className="px-2 pb-4" ref={identityRef} style={{ borderTop: '1px solid #222', paddingTop: '12px' }}>
-        <button
-          onClick={() => setIdentityOpen(v => !v)}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-13 transition-colors"
-          style={{
-            color: TEXT,
-            background: identityOpen ? HI : 'transparent',
-            border: `2px solid ${identityOpen ? '#333' : 'transparent'}`,
-            borderRadius: '3px',
-            cursor: 'pointer',
-          }}
-        >
-          <div
-            className="w-6 h-6 flex items-center justify-center text-11 font-medium flex-shrink-0"
-            style={{ background: LIME, color: '#0D0D0D', borderRadius: '2px', fontFamily: 'JetBrains Mono', fontWeight: 700 }}
+        <div className="power-rail__identity" ref={identityRef}>
+          <ConnectionStatus compact={!expanded} />
+          <button
+            type="button"
+            className="power-rail__identity-button"
+            onClick={() => setIdentityOpen((current) => !current)}
+            aria-haspopup="menu"
+            aria-expanded={identityOpen}
           >
-            {viewingAs.slice(0, 2).toUpperCase()}
-          </div>
-          <span className="flex-1 text-left" style={{ color: TEXT, fontWeight: 500 }}>{viewingAs}</span>
-          <ChevronDown size={12} style={{ color: MUTED, transform: identityOpen ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
-        </button>
+            <span className="power-rail__avatar">{viewingAs.slice(0, 2).toUpperCase()}</span>
+            <span className="power-rail__label power-rail__identity-copy">
+              <small>Viewing as</small>
+              <strong>{viewingAs === 'gargi' ? 'Gargi · Provider' : 'Kavya · Requester'}</strong>
+            </span>
+            <ChevronDown className="power-rail__label" size={13} />
+          </button>
 
-        {identityOpen && (
-          <div
-            className="mt-1 overflow-hidden"
-            style={{ background: HI, border: '2px solid #333', borderRadius: '3px' }}
-          >
-            <div className="px-3 py-1.5 neo-label" style={{ color: MUTED }}>
-              Viewing as
-            </div>
-            {IDENTITIES.map(id => (
+          {identityOpen && expanded && (
+            <div className="power-rail__identity-menu" role="menu" aria-label="Viewing identity">
+            {IDENTITIES.map(({ id, label }) => (
               <button
                 key={id}
-                className="w-full flex items-center gap-2 px-3 py-2 text-13 text-left"
-                style={{
-                  color: viewingAs === id ? LIME : TEXT,
-                  background: viewingAs === id ? 'rgba(212,255,0,0.1)' : 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: viewingAs === id ? 700 : 400,
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => { if (viewingAs !== id) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                onMouseLeave={e => { if (viewingAs !== id) e.currentTarget.style.background = 'transparent'; }}
+                type="button"
+                role="menuitemradio"
+                aria-checked={viewingAs === id}
                 onClick={() => { setViewingAs(id); setIdentityOpen(false); }}
               >
-                <User size={11} style={{ color: viewingAs === id ? LIME : MUTED }} />
-                {id}
+                <User size={12} />
+                {label}
               </button>
             ))}
           </div>
         )}
-      </div>
-    </nav>
+        </div>
+
+        <div className="power-dock__status" aria-hidden="true"><Activity size={13} /></div>
+      </nav>
+    </div>
   );
 }

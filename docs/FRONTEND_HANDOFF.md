@@ -2,14 +2,20 @@
 
 The backend contract is stable enough for the first integration pass.
 
-## Suggested frontend modules
+`web/src/api/coordinator.ts` is the strict browser client for this contract. It parses response envelopes and payloads,
+maps API errors to `CoordinatorApiError`, requires the caller to provide the correct role token, and exposes an
+authenticated job SSE subscription with replay, bounded reconnect backoff, terminal-state shutdown, and explicit cleanup.
+The screen store and all five routes now use this client. The earlier mock AI/WebSocket fields are no longer part of the
+rendered application, and the UI labels `LOCAL_UNSAFE` execution honestly instead of presenting it as sandbox evidence.
 
-- `lib/api.ts`: envelope parsing, Bearer token, typed error mapping.
-- `lib/contracts.ts`: re-export or mirror `packages/contracts/src/index.ts`.
-- `features/auth`: two demo identities, requester and provider.
-- `features/provider`: device registration, capability policy, approval, kill/resume.
-- `features/requester`: job form, match state, live state timeline, result.
-- `features/network`: summary counters and available capability cards.
+## Implemented frontend modules
+
+- `web/src/api/coordinator.ts`: envelope parsing, runtime response checks, Bearer auth, typed errors, and authenticated SSE.
+- `web/src/store/index.ts`: requester/provider demo sessions and coordinator-backed device, capability, job, event, and summary state.
+- `web/src/routes/ProviderConsole.tsx`: device registration, one-time agent credentials, policy controls, approval, kill, and resume.
+- `web/src/routes/RequesterConsole.tsx`: bounded Mandelbrot job form and live compatibility preview.
+- `web/src/routes/JobDetail.tsx`: role-aware controls, REST event replay, SSE updates, execution evidence, and safe SVG display.
+- `web/src/routes/NetworkDashboard.tsx`: coordinator counters plus exact provider, capability, and job state.
 
 ## Provider trust display
 

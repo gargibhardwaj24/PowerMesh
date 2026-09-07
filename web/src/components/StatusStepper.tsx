@@ -1,76 +1,70 @@
 import { Check } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { JobStatus } from '../api/types';
+import type { CoordinatorJob } from '../api/coordinator';
 
-const STEPS: { key: JobStatus; label: string }[] = [
-  { key: 'queued',            label: 'Queued' },
-  { key: 'matched',           label: 'Matched' },
-  { key: 'awaiting_approval', label: 'Approved' },
-  { key: 'running',           label: 'Running' },
-  { key: 'completed',         label: 'Completed' },
-];
+type JobStatus = CoordinatorJob['status'];
 
-const STEP_ORDER: Partial<Record<JobStatus, number>> = {
-  queued: 0, matching: 0, matched: 1, awaiting_approval: 2, approved: 2, running: 3, completed: 5,
+const STEPS = ['Submitted', 'Matched', 'Approved', 'Running', 'Completed'] as const;
+const STEP_ORDER: Record<JobStatus, number> = {
+  SUBMITTED: 0,
+  QUEUED: 0,
+  AWAITING_APPROVAL: 1,
+  APPROVED: 2,
+  RUNNING: 3,
+  COMPLETED: 4,
+  FAILED: 3,
+  REJECTED: 1,
+  CANCELLED: 0,
+  KILLED: 3,
+  EXPIRED: 0,
 };
 
-interface Props { status: JobStatus; }
+const ERROR_STATUSES = new Set<JobStatus>(['FAILED', 'REJECTED', 'CANCELLED', 'KILLED', 'EXPIRED']);
 
-export default function StatusStepper({ status }: Props) {
-  const isError = ['failed', 'rejected', 'cancelled', 'no_provider'].includes(status);
-  const current = STEP_ORDER[status] ?? 0;
-
-  if (isError) {
+export default function StatusStepper({ status }: { status: JobStatus }) {
+  if (ERROR_STATUSES.has(status)) {
     return (
       <div
         className="flex items-center gap-2 px-4 py-3 rounded-card text-15"
         style={{ background: 'color-mix(in srgb, var(--pm-stop) 12%, transparent)', border: '1px solid var(--pm-stop)', color: 'var(--pm-stop)' }}
       >
-        <span className="font-medium capitalize">{status.replace('_', ' ')}</span>
+        <span className="font-medium">{status.toLowerCase()}</span>
       </div>
     );
   }
 
+  const current = STEP_ORDER[status];
   return (
     <div className="flex items-center gap-0">
-      {STEPS.map((step, i) => {
-        const done = i < current;
-        const active = i === current;
-        const future = i > current;
-
+      {STEPS.map((label, index) => {
+        const done = index < current;
+        const active = index === current;
         return (
-          <div key={step.key} className="flex items-center">
+          <div key={label} className="flex items-center">
             <div className="flex flex-col items-center gap-1">
               <div
                 className={clsx(
                   'w-7 h-7 rounded-full flex items-center justify-center text-12 font-mono transition-colors',
-                  done  && 'text-white',
-                  active && clsx('pulse-slow'),
-                  future && 'opacity-40',
+                  done && 'text-white',
+                  active && 'pulse-slow',
+                  index > current && 'opacity-40',
                 )}
                 style={{
                   background: done ? 'var(--pm-ok)' : active ? 'var(--pm-run)' : 'var(--pm-raised)',
                   border: `2px solid ${done ? 'var(--pm-ok)' : active ? 'var(--pm-run)' : 'var(--pm-line)'}`,
-                  color: future ? 'var(--pm-faint)' : active ? '#fff' : undefined,
+                  color: index > current ? 'var(--pm-faint)' : active ? '#fff' : undefined,
                 }}
               >
-                {done ? <Check size={12} strokeWidth={3} /> : i + 1}
+                {done ? <Check size={12} strokeWidth={3} /> : index + 1}
               </div>
-              <span
-                className="text-11 whitespace-nowrap"
-                style={{ color: done ? 'var(--pm-ok)' : active ? 'var(--pm-run)' : 'var(--pm-faint)' }}
-              >
-                {step.label}
+              <span className="text-11 whitespace-nowrap" style={{ color: done ? 'var(--pm-ok)' : active ? 'var(--pm-run)' : 'var(--pm-faint)' }}>
+                {label}
               </span>
             </div>
-            {i < STEPS.length - 1 && (
+            {index < STEPS.length - 1 && (
               <div
                 className="h-0.5 mx-1 transition-colors"
-                style={{
-                  width: 40,
-                  background: done ? 'var(--pm-ok)' : 'var(--pm-line)',
-                  marginBottom: 18,
-                }}
+                style={{ width: 40, background: done ? 'var(--pm-ok)' : 'var(--pm-line)', marginBottom: 18 }}
               />
             )}
           </div>
