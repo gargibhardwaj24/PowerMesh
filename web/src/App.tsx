@@ -58,15 +58,31 @@ export default function App() {
 
   useEffect(() => {
     let disposed = false;
-    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = (): void => {
+      if (disposed) return;
+      refreshTimer = setTimeout(() => {
+        void refreshOnce();
+      }, REFRESH_INTERVAL_MS);
+    };
+
+    const refreshOnce = async (): Promise<void> => {
+      try {
+        await refresh();
+      } finally {
+        scheduleRefresh();
+      }
+    };
+
     const start = async () => {
       await bootstrap();
-      if (!disposed) refreshTimer = setInterval(() => { void refresh(); }, REFRESH_INTERVAL_MS);
+      scheduleRefresh();
     };
     void start();
     return () => {
       disposed = true;
-      if (refreshTimer !== null) clearInterval(refreshTimer);
+      if (refreshTimer !== null) clearTimeout(refreshTimer);
     };
   }, [bootstrap, refresh]);
 

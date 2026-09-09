@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock3, ShieldCheck, X } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import type { CoordinatorJob } from '../api/coordinator';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -8,6 +8,19 @@ import { useStore } from '../store';
 interface Props {
   job: CoordinatorJob | null;
   onClose: () => void;
+}
+
+type SafetyState = 'passed' | 'pending' | 'warning';
+
+function SafetyRow({ label, value, state }: { label: string; value: string; state: SafetyState }) {
+  const Icon = state === 'passed' ? Check : state === 'pending' ? Clock3 : AlertTriangle;
+  return (
+    <div data-state={state}>
+      <Icon size={13} />
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
 }
 
 export default function ApprovalDrawer({ job, onClose }: Props) {
@@ -85,10 +98,10 @@ export default function ApprovalDrawer({ job, onClose }: Props) {
 
           <section className="approval-safety" aria-labelledby="safety-checks-title">
             <h3 id="safety-checks-title">Safety checks</h3>
-            <div><Check size={13} /><span>Allowlisted capability contract</span><strong>passed</strong></div>
-            <div><Check size={13} /><span>Explicit provider consent</span><strong>required</strong></div>
-            <div data-safe={dockerIsolated}><Check size={13} /><span>Reported isolation</span><strong>{device?.hardware?.executionIsolation ?? 'unreported'}</strong></div>
-            <div data-safe={dockerIsolated}><Check size={13} /><span>Network and root filesystem</span><strong>{dockerIsolated ? 'restricted' : 'not guaranteed'}</strong></div>
+            <SafetyRow label="Allowlisted capability contract" value="passed" state="passed" />
+            <SafetyRow label="Explicit provider consent" value="awaiting decision" state="pending" />
+            <SafetyRow label="Reported isolation" value={device?.hardware?.executionIsolation ?? 'unreported'} state={dockerIsolated ? 'passed' : 'warning'} />
+            <SafetyRow label="Network and root filesystem" value={dockerIsolated ? 'restricted' : 'not guaranteed'} state={dockerIsolated ? 'passed' : 'warning'} />
           </section>
 
           {error !== null && <p className="form-error" role="alert">{error}</p>}

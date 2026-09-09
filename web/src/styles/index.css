@@ -875,7 +875,8 @@
   .approval-spec dt { color: var(--pm-muted); font-size: 12px; }
   .approval-spec dd { font-family: 'JetBrains Mono', monospace; font-size: 11px; text-align: right; }
   .approval-safety > div { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 9px; border-bottom: 1px solid var(--pm-line); color: var(--pm-ok); }
-  .approval-safety > div[data-safe='false'] { color: var(--pm-warn); }
+  .approval-safety > div[data-state='pending'] { color: var(--pm-warn); }
+  .approval-safety > div[data-state='warning'] { color: var(--pm-stop); }
   .approval-safety span { color: var(--pm-text); font-size: 12px; }
   .approval-safety strong { font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; }
   .approval-drawer .form-error { margin-top: 16px; }

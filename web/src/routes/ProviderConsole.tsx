@@ -170,7 +170,7 @@ export default function ProviderConsole() {
   }
 
   async function handlePublish(): Promise<void> {
-    if (device === null || !policyValid) return;
+    if (device === null || device.status === 'PAUSED' || !policyValid) return;
     await runAction(async () => {
       await publishCapability({
         deviceId: device.id,
@@ -247,14 +247,14 @@ export default function ProviderConsole() {
       {showRegistration && (
         <section className="registration-lane" aria-labelledby="register-node-title">
           <div><p className="section-kicker">New provider node</p><h2 id="register-node-title">Register capability host</h2><p>This creates one-time agent credentials. No capability is published automatically.</p></div>
-          <label className="field-control">
+          <label className="field-control" htmlFor="provider-node-name">
             <span>Node name</span>
-            <input value={deviceName} aria-invalid={deviceNameError !== null} onChange={(event) => setDeviceName(event.target.value)} />
-            {deviceNameError !== null && <small className="field-error">{deviceNameError}</small>}
+            <input id="provider-node-name" value={deviceName} aria-invalid={deviceNameError !== null} aria-describedby={deviceNameError === null ? undefined : 'provider-node-name-error'} onChange={(event) => setDeviceName(event.target.value)} />
+            {deviceNameError !== null && <small id="provider-node-name-error" className="field-error">{deviceNameError}</small>}
           </label>
-          <label className="field-control">
+          <label className="field-control" htmlFor="provider-node-platform">
             <span>Platform</span>
-            <select value={platform} onChange={(event) => setPlatform(event.target.value as DevicePlatform)}>
+            <select id="provider-node-platform" value={platform} onChange={(event) => setPlatform(event.target.value as DevicePlatform)}>
               <option value="MACOS">macOS</option>
               <option value="LINUX">Linux</option>
               <option value="WINDOWS">Windows</option>
@@ -293,7 +293,7 @@ export default function ProviderConsole() {
             <div><span className="provider-safety-dock__dot" data-online={device.status === 'ONLINE'} /><span><strong>{device.name}</strong><small>{device.hardware?.executionIsolation ?? 'isolation unreported'} · selected node</small></span></div>
             <div>
               {device.status === 'PAUSED' && <button type="button" className="is-resume" onClick={() => { void handleResume(); }} disabled={busy}><Play size={13} /> Resume node</button>}
-              <button type="button" className="is-stop" onClick={() => setConfirmation({ kind: 'kill' })} disabled={busy}><Zap size={13} /> Emergency stop</button>
+              {device.status !== 'PAUSED' && <button type="button" className="is-stop" onClick={() => setConfirmation({ kind: 'kill' })} disabled={busy}><Zap size={13} /> Emergency stop</button>}
             </div>
           </div>
 
@@ -335,7 +335,7 @@ export default function ProviderConsole() {
                   <span className="capability-lane__result">{capability.completedJobs} ok / {capability.failedJobs} failed</span>
                   {capability.status !== 'REVOKED' && (
                     <span className="capability-lane__actions">
-                      <button type="button" onClick={() => { void handleCapabilityStatus(capability.id, capability.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'); }} disabled={busy} aria-label={capability.status === 'ACTIVE' ? 'Pause capability' : 'Activate capability'}>
+                      <button type="button" onClick={() => { void handleCapabilityStatus(capability.id, capability.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'); }} disabled={busy || device.status === 'PAUSED'} aria-label={capability.status === 'ACTIVE' ? 'Pause capability' : 'Activate capability'} title={device.status === 'PAUSED' ? 'Resume the provider node before changing this policy' : undefined}>
                         {capability.status === 'ACTIVE' ? <Pause size={14} /> : <Play size={14} />}
                       </button>
                       <button type="button" className="is-danger" onClick={() => setConfirmation({ kind: 'revoke', capabilityId: capability.id })} disabled={busy} aria-label="Revoke capability"><Trash2 size={14} /></button>
@@ -369,7 +369,7 @@ export default function ProviderConsole() {
                 <NumberField label="Runtime" value={policy.maxRuntimeMs} min={JOB_RUNTIME_LIMITS.MIN_MS} max={JOB_RUNTIME_LIMITS.MAX_MS} step={1_000} onChange={(maxRuntimeMs) => setPolicy((current) => ({ ...current, maxRuntimeMs }))} />
                 <NumberField label="Parallel jobs" value={policy.maxConcurrentJobs} min={CAPABILITY_POLICY_LIMITS.MIN_CONCURRENT_JOBS} max={CAPABILITY_POLICY_LIMITS.MAX_CONCURRENT_JOBS} onChange={(maxConcurrentJobs) => setPolicy((current) => ({ ...current, maxConcurrentJobs }))} />
               </div>
-              <div className="policy-composer__footer"><p><Cpu size={13} /> Network access and arbitrary code remain unavailable.</p><button type="button" className="neo-btn" onClick={() => { void handlePublish(); }} disabled={busy || !policyValid}>{busy ? 'Publishing…' : 'Publish for 4 hours'}</button></div>
+              <div className="policy-composer__footer"><p><Cpu size={13} /> {device.status === 'PAUSED' ? 'Resume this node before publishing a policy.' : 'Network access and arbitrary code remain unavailable.'}</p><button type="button" className="neo-btn" onClick={() => { void handlePublish(); }} disabled={busy || device.status === 'PAUSED' || !policyValid}>{busy ? 'Publishing…' : 'Publish for 4 hours'}</button></div>
             </section>
             <CapacityGraph available={availableSlots} used={usedSlots} />
           </div>

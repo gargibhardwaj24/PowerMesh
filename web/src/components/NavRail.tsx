@@ -15,6 +15,7 @@ const IDENTITIES: { id: ViewingIdentity; label: string }[] = [
   { id: 'gargi', label: 'Gargi · Provider' },
   { id: 'kavya', label: 'Kavya · Requester' },
 ];
+const DOCK_LAYOUT_QUERY = '(max-width: 899px)';
 
 export default function NavRail() {
   const location = useLocation();
@@ -23,6 +24,7 @@ export default function NavRail() {
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
+  const [dockLayout, setDockLayout] = useState(() => window.matchMedia(DOCK_LAYOUT_QUERY).matches);
   const identityRef = useRef<HTMLDivElement>(null);
   const expanded = hovered || pinned || identityOpen;
   const activeIndex = useMemo(() => {
@@ -30,6 +32,14 @@ export default function NavRail() {
     const index = NAV.findIndex((item) => item.to === location.pathname);
     return index < 0 ? 0 : index;
   }, [location.pathname]);
+
+  useEffect(() => {
+    const media = window.matchMedia(DOCK_LAYOUT_QUERY);
+    const updateLayout = (): void => setDockLayout(media.matches);
+    updateLayout();
+    media.addEventListener('change', updateLayout);
+    return () => media.removeEventListener('change', updateLayout);
+  }, []);
 
   useEffect(() => {
     if (!identityOpen) return;
@@ -97,7 +107,7 @@ export default function NavRail() {
         </div>
 
         <div className="power-rail__identity" ref={identityRef}>
-          <ConnectionStatus compact={!expanded} />
+          <ConnectionStatus compact={dockLayout || !expanded} />
           <button
             type="button"
             className="power-rail__identity-button"

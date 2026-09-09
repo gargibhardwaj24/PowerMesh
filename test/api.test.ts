@@ -3,7 +3,10 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createApiApplication } from "../apps/api/src/app.js";
 import type { ApiConfig } from "../apps/api/src/config.js";
+import { SqliteStore } from "../apps/api/src/database.js";
+import { JobEventBus } from "../apps/api/src/event-bus.js";
 import type { JobCreateInput } from "../packages/contracts/src/index.js";
+import { AppError } from "../packages/core/src/errors.js";
 import { renderMandelbrotSvg } from "../packages/core/src/mandelbrot.js";
 
 const TEST_SECRET = "integration-test-secret-with-more-than-thirty-two-characters";
@@ -32,6 +35,30 @@ function string(value: unknown, message: string): string {
   if (typeof value !== "string") assert.fail(message);
   return value;
 }
+
+void test("capability persistence enforces provider device ownership", (context) => {
+  const store = new SqliteStore(":memory:", new JobEventBus());
+  context.after(() => store.close());
+  const owner = store.upsertUser("Owner Provider", "owner@powermesh.demo", "PROVIDER");
+  const otherProvider = store.upsertUser("Other Provider", "other@powermesh.demo", "PROVIDER");
+  const registration = store.createDevice(owner.id, { name: "Owner Node", platform: "LINUX" });
+
+  assert.throws(
+    () => store.publishCapability(otherProvider.id, {
+      deviceId: registration.device.id,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 800,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 1,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }),
+    (error: unknown) => error instanceof AppError && error.statusCode === 403 && error.code === "FORBIDDEN"
+  );
+});
 
 async function request(
   baseUrl: string,
@@ -325,6 +352,28 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   assert.equal(reportedHardware["cpuModel"], TEST_HARDWARE.cpuModel);
   assert.equal(reportedHardware["executionIsolation"], "LOCAL_UNSAFE");
 
+  const pausedRepublish = await request(baseUrl, "/api/capabilities", {
+    method: "POST",
+    token: providerToken,
+    body: {
+      deviceId,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 800,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 1,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }
+  });
+  assert.equal(pausedRepublish.status, 409);
+  assert.equal(
+    record(record(pausedRepublish.body, "paused republish envelope")["error"], "paused republish error")["code"],
+    "DEVICE_PAUSED"
+  );
+
   const summaryWhilePaused = await request(baseUrl, "/api/network/summary", { token: providerToken });
   const pausedSummary = record(record(summaryWhilePaused.body, "summary envelope")["data"], "paused summary");
   assert.equal(pausedSummary["activeCapabilities"], 0);
@@ -576,6 +625,30 @@ void test("authenticated API completes the capability-first job lifecycle", asyn
   const otherProviderToken = string(
     record(record(otherProviderSession.body, "other provider envelope")["data"], "other provider data")["token"],
     "other provider token"
+  );
+  const forbiddenCapabilityPublish = await request(baseUrl, "/api/capabilities", {
+    method: "POST",
+    token: otherProviderToken,
+    body: {
+      deviceId,
+      type: "MANDELBROT_RENDER",
+      policy: {
+        maxWidth: 800,
+        maxHeight: 600,
+        maxIterations: 250,
+        maxRuntimeMs: 15_000,
+        maxConcurrentJobs: 1,
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    }
+  });
+  assert.equal(forbiddenCapabilityPublish.status, 403);
+  assert.equal(
+    record(
+      record(forbiddenCapabilityPublish.body, "forbidden capability publish envelope")["error"],
+      "forbidden capability publish error"
+    )["code"],
+    "FORBIDDEN"
   );
   assert.equal(
     (

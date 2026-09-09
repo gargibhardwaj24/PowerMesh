@@ -639,45 +639,55 @@ export class SqliteStore {
 
   publishCapability(providerId: string, input: CapabilityCreateInput): CapabilityRecord {
     try {
-      const now = new Date().toISOString();
-      const id = randomUUID();
-      this.#database
-        .prepare(
-          `INSERT INTO capabilities (
-            id, device_id, provider_id, type, status, max_width, max_height, max_iterations,
-            max_runtime_ms, max_concurrent_jobs, expires_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(device_id, type) DO UPDATE SET
-            provider_id = excluded.provider_id,
-            status = 'ACTIVE',
-            max_width = excluded.max_width,
-            max_height = excluded.max_height,
-            max_iterations = excluded.max_iterations,
-            max_runtime_ms = excluded.max_runtime_ms,
-            max_concurrent_jobs = excluded.max_concurrent_jobs,
-            expires_at = excluded.expires_at,
-            updated_at = excluded.updated_at`
-        )
-        .run(
-          id,
-          input.deviceId,
-          providerId,
-          input.type,
-          input.policy.maxWidth,
-          input.policy.maxHeight,
-          input.policy.maxIterations,
-          input.policy.maxRuntimeMs,
-          input.policy.maxConcurrentJobs,
-          input.policy.expiresAt,
-          now,
-          now
-        );
-      return mapCapability(
+      return this.#transaction(() => {
+        const device = this.getDevice(input.deviceId);
+        if (device === null) throw new AppError(404, "DEVICE_NOT_FOUND", "Provider device was not found");
+        if (device.ownerId !== providerId) throw new AppError(403, "FORBIDDEN", "You do not own this device");
+        if (device.status === "PAUSED") {
+          throw new AppError(409, "DEVICE_PAUSED", "Resume the provider device before publishing a capability");
+        }
+
+        const now = new Date().toISOString();
+        const id = randomUUID();
         this.#database
-          .prepare(`${CAPABILITY_WITH_RELIABILITY_SELECT} WHERE c.device_id = ? AND c.type = ?`)
-          .get(input.deviceId, input.type)!
-      );
+          .prepare(
+            `INSERT INTO capabilities (
+              id, device_id, provider_id, type, status, max_width, max_height, max_iterations,
+              max_runtime_ms, max_concurrent_jobs, expires_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(device_id, type) DO UPDATE SET
+              provider_id = excluded.provider_id,
+              status = 'ACTIVE',
+              max_width = excluded.max_width,
+              max_height = excluded.max_height,
+              max_iterations = excluded.max_iterations,
+              max_runtime_ms = excluded.max_runtime_ms,
+              max_concurrent_jobs = excluded.max_concurrent_jobs,
+              expires_at = excluded.expires_at,
+              updated_at = excluded.updated_at`
+          )
+          .run(
+            id,
+            input.deviceId,
+            providerId,
+            input.type,
+            input.policy.maxWidth,
+            input.policy.maxHeight,
+            input.policy.maxIterations,
+            input.policy.maxRuntimeMs,
+            input.policy.maxConcurrentJobs,
+            input.policy.expiresAt,
+            now,
+            now
+          );
+        return mapCapability(
+          this.#database
+            .prepare(`${CAPABILITY_WITH_RELIABILITY_SELECT} WHERE c.device_id = ? AND c.type = ?`)
+            .get(input.deviceId, input.type)!
+        );
+      });
     } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new Error("Unable to publish provider capability", { cause: error });
     }
   }

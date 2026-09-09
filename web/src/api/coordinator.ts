@@ -15,6 +15,7 @@ import type {
 
 const RECONNECT_INITIAL_MS = 500;
 const RECONNECT_MAX_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 const JOB_STATUS_VALUES = [
   'SUBMITTED',
   'QUEUED',
@@ -477,24 +478,37 @@ export class CoordinatorApi {
     const headers = new Headers({ Accept: 'application/json' });
     if (options.token !== undefined) headers.set('Authorization', `Bearer ${options.token}`);
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
-    let response: Response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      response = await fetch(`${this.#baseUrl}${path}`, {
+      const response = await fetch(`${this.#baseUrl}${path}`, {
         method,
         headers,
+        signal: controller.signal,
         ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       });
+      const payload = await readResponseJson(response);
+      if (!response.ok) throw toApiError(response, payload);
+      return parseSuccessEnvelope(payload, parser).data;
     } catch (error) {
+      if (error instanceof CoordinatorApiError) throw error;
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new CoordinatorApiError({
+          code: 'COORDINATOR_TIMEOUT',
+          message: 'The PowerMesh coordinator did not respond in time',
+          status: 408,
+          originalError: error,
+        });
+      }
       throw new CoordinatorApiError({
         code: 'COORDINATOR_UNAVAILABLE',
         message: 'Could not reach the PowerMesh coordinator',
         status: 0,
         originalError: error,
       });
+    } finally {
+      clearTimeout(timeout);
     }
-    const payload = await readResponseJson(response);
-    if (!response.ok) throw toApiError(response, payload);
-    return parseSuccessEnvelope(payload, parser).data;
   }
 
   createDemoSession(input: DemoSessionInput): Promise<DemoSession> {
